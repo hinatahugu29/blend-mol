@@ -13,6 +13,8 @@ their atom and bond graph as a ball-and-stick model.
   where their colours can be changed immediately for existing molecules.
 - Provides import-time mesh-density defaults and a non-destructive Subdivision
   Surface command for existing atoms and bonds.
+- Stores the imported atom and bond graph on the molecule root, so the selected
+  molecule can be rebuilt non-destructively from the **Blend Mol** sidebar.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 

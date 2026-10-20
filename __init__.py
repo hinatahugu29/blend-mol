@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import bpy
 from bpy.props import (
@@ -16,7 +17,7 @@ from bpy.props import (
 from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
-from .molfile import Molecule, MolfileError, read_v2000
+from .molfile import Atom, Bond, Molecule, MolfileError, read_v2000
 
 
 ELEMENT_COLORS = {
@@ -122,7 +123,7 @@ def _smooth_mesh(obj: bpy.types.Object) -> None:
 
 def _sphere(
     name: str, location: Vector, radius: float, color, material, collection, element: str,
-    segments: int, rings: int,
+    segments: int, rings: int, atom_index: int | None = None, implicit: bool = False,
 ) -> bpy.types.Object:
     bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=location)
     obj = bpy.context.object
@@ -133,6 +134,9 @@ def _sphere(
     obj.color = color
     obj["blend_mol_kind"] = "atom"
     obj["blend_mol_element"] = element
+    obj["blend_mol_implicit"] = implicit
+    if atom_index is not None:
+        obj["blend_mol_atom_index"] = atom_index
     _smooth_mesh(obj)
     obj.data.materials.append(material)
     return obj
@@ -140,6 +144,7 @@ def _sphere(
 
 def _cylinder(
     name: str, start: Vector, end: Vector, radius: float, color, material, collection, sides: int,
+    bond_index: int | None = None, bond_order: int | None = None, implicit: bool = False,
 ) -> bpy.types.Object:
     direction = end - start
     bpy.ops.mesh.primitive_cylinder_add(vertices=sides, radius=radius, depth=direction.length, location=(start + end) / 2)
@@ -152,6 +157,10 @@ def _cylinder(
     obj.name = name
     obj.color = color
     obj["blend_mol_kind"] = "bond"
+    obj["blend_mol_implicit"] = implicit
+    if bond_index is not None:
+        obj["blend_mol_bond_index"] = bond_index
+        obj["blend_mol_bond_order"] = bond_order
     _smooth_mesh(obj)
     obj.data.materials.append(material)
     return obj
@@ -200,13 +209,46 @@ def _implicit_hydrogens(molecule: Molecule) -> list[tuple[int, Vector]]:
     return hydrogens
 
 
-def _create_molecule(molecule: Molecule, settings: BlendMolSettings, source_path: str) -> bpy.types.Object:
-    collection = bpy.data.collections.new(f"{molecule.name} atoms and bonds")
-    bpy.context.collection.children.link(collection)
-    root = bpy.data.objects.new(molecule.name, None)
-    _link_object(root, collection)
-    root["blend_mol_source"] = source_path
-    root["blend_mol_managed"] = True
+def _serialize_molecule(molecule: Molecule) -> str:
+    return json.dumps({
+        "name": molecule.name,
+        "atoms": [{"element": atom.element, "position": atom.position} for atom in molecule.atoms],
+        "bonds": [{"atom_a": bond.atom_a, "atom_b": bond.atom_b, "order": bond.order} for bond in molecule.bonds],
+    }, separators=(",", ":"))
+
+
+def _deserialize_molecule(payload: str) -> Molecule:
+    data = json.loads(payload)
+    return Molecule(
+        name=data["name"],
+        atoms=tuple(Atom(atom["element"], tuple(atom["position"])) for atom in data["atoms"]),
+        bonds=tuple(Bond(bond["atom_a"], bond["atom_b"], bond["order"]) for bond in data["bonds"]),
+    )
+
+
+def _molecule_collection(root: bpy.types.Object) -> bpy.types.Collection | None:
+    collection_name = root.get("blend_mol_collection")
+    return bpy.data.collections.get(collection_name) if collection_name else None
+
+
+def _selected_molecule_root(context) -> bpy.types.Object | None:
+    obj = context.active_object
+    while obj:
+        if obj.get("blend_mol_managed"):
+            return obj
+        obj = obj.parent
+    return None
+
+
+def _clear_molecule_display(root: bpy.types.Object, collection: bpy.types.Collection) -> None:
+    for obj in list(collection.objects):
+        if obj != root:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+
+def _render_molecule(
+    root: bpy.types.Object, collection: bpy.types.Collection, molecule: Molecule, settings: BlendMolSettings,
+) -> None:
     root["blend_mol_atom_count"] = len(molecule.atoms)
     root["blend_mol_bond_count"] = len(molecule.bonds)
     atom_material = _material("Blend Mol Atom", settings.roughness, settings.metallic)
@@ -218,6 +260,7 @@ def _create_molecule(molecule: Molecule, settings: BlendMolSettings, source_path
             f"{atom.element}_{index + 1:03d}", Vector(atom.position),
             ELEMENT_RADII.get(atom.element, 0.34) * settings.atom_scale,
             color, atom_material, collection, atom.element, settings.atom_segments, settings.atom_rings,
+            atom_index=index,
         )
 
     for index, bond in enumerate(molecule.bonds):
@@ -225,19 +268,32 @@ def _create_molecule(molecule: Molecule, settings: BlendMolSettings, source_path
         for segment_index, offset in enumerate(_bond_offsets(start, end, bond.order, settings.bond_radius)):
             _cylinder(f"Bond_{index + 1:03d}_{segment_index + 1}", start + offset, end + offset,
                       settings.bond_radius, (0.30, 0.30, 0.30, 1.0), bond_material, collection,
-                      settings.bond_sides)
+                      settings.bond_sides, bond_index=index, bond_order=bond.order)
 
     if settings.show_implicit_hydrogens:
         for index, (parent, position) in enumerate(_implicit_hydrogens(molecule)):
             _cylinder(f"H_Bond_{index + 1:03d}", Vector(molecule.atoms[parent].position), position,
                       settings.bond_radius * 0.72, (0.55, 0.55, 0.55, 1.0), bond_material, collection,
-                      settings.bond_sides)
+                      settings.bond_sides, implicit=True)
             _sphere(f"H_{index + 1:03d}", position, ELEMENT_RADII["H"] * settings.atom_scale,
                     _element_color(settings, "H"), atom_material, collection, "H",
-                    settings.atom_segments, settings.atom_rings)
+                    settings.atom_segments, settings.atom_rings, implicit=True)
     for obj in collection.objects:
         if obj != root:
             obj.parent = root
+
+
+def _create_molecule(molecule: Molecule, settings: BlendMolSettings, source_path: str) -> bpy.types.Object:
+    collection = bpy.data.collections.new(f"{molecule.name} atoms and bonds")
+    bpy.context.collection.children.link(collection)
+    root = bpy.data.objects.new(molecule.name, None)
+    _link_object(root, collection)
+    root["blend_mol_source"] = source_path
+    root["blend_mol_managed"] = True
+    root["blend_mol_data_version"] = 1
+    root["blend_mol_data"] = _serialize_molecule(molecule)
+    root["blend_mol_collection"] = collection.name
+    _render_molecule(root, collection, molecule, settings)
     return root
 
 
@@ -262,6 +318,31 @@ class BLENDMOL_OT_import_v2000(Operator):
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
+
+
+class BLENDMOL_OT_rebuild_display(Operator):
+    bl_idname = "blendmol.rebuild_display"
+    bl_label = "Rebuild Selected Molecule"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        if root is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        collection = _molecule_collection(root)
+        if collection is None or "blend_mol_data" not in root:
+            self.report({"ERROR"}, "This molecule does not contain rebuildable Blend Mol data")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, molecule, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Rebuilt {molecule.name}")
+        return {"FINISHED"}
 
 
 class BLENDMOL_OT_reset_element_colors(Operator):
@@ -313,6 +394,7 @@ class BLENDMOL_PT_panel(Panel):
         layout = self.layout
         settings = context.scene.blend_mol_settings
         layout.operator(BLENDMOL_OT_import_v2000.bl_idname, icon="IMPORT")
+        layout.operator(BLENDMOL_OT_rebuild_display.bl_idname, icon="FILE_REFRESH")
         layout.separator()
         elements = _managed_atom_elements()
         if elements:
@@ -345,6 +427,7 @@ CLASSES = (
     BlendMolElementColor,
     BlendMolSettings,
     BLENDMOL_OT_import_v2000,
+    BLENDMOL_OT_rebuild_display,
     BLENDMOL_OT_reset_element_colors,
     BLENDMOL_OT_add_subdivision,
     BLENDMOL_PT_panel,
