@@ -19,7 +19,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
 from .molfile import Atom, Bond, Molecule, MolfileError, read_v2000
-from .uff import type_molecule
+from .uff import bond_stretch_energy, type_molecule
 
 
 ELEMENT_COLORS = {
@@ -944,9 +944,16 @@ class BLENDMOL_PT_panel(Panel):
                 for atom_type in uff_report.types:
                     counts[atom_type] = counts.get(atom_type, 0) + 1
                 summary = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
-                uff_box.label(text="Ready for implemented UFF terms", icon="CHECKMARK")
+                uff_box.label(text="Atom typing: ready", icon="CHECKMARK")
                 uff_box.label(text=summary)
-                uff_box.label(text="Energy minimisation is not implemented yet")
+                stretch = bond_stretch_energy(molecule)
+                if stretch.ready:
+                    uff_box.label(
+                        text=f"Bond stretch: {stretch.energy_kcal_mol:.3f} kcal/mol ({stretch.terms} terms)"
+                    )
+                else:
+                    uff_box.label(text="Bond stretch: needs explicit hydrogens", icon="INFO")
+                uff_box.label(text="No angle/torsion/non-bonded terms or minimisation yet")
             else:
                 uff_box.alert = True
                 uff_box.label(text="Not ready for UFF", icon="ERROR")
