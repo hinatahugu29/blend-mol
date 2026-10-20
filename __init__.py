@@ -8,6 +8,7 @@ import bpy
 from bpy.props import (
     BoolProperty,
     CollectionProperty,
+    EnumProperty,
     IntProperty,
     FloatProperty,
     FloatVectorProperty,
@@ -34,6 +35,7 @@ ELEMENT_COLORS = {
 }
 ELEMENT_RADII = {"H": 0.22, "C": 0.34, "N": 0.33, "O": 0.31, "P": 0.38, "S": 0.38}
 TYPICAL_VALENCE = {"C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
+ELEMENT_ITEMS = tuple((element, element, "") for element in ELEMENT_COLORS)
 
 
 def _update_element_color(item, _context) -> None:
@@ -68,6 +70,7 @@ class BlendMolSettings(PropertyGroup):
     roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
     metallic: FloatProperty(name="Metallic", default=0.0, min=0.0, max=1.0)
     show_implicit_hydrogens: BoolProperty(name="Show Implicit Hydrogens", default=True)
+    edit_element: EnumProperty(name="Element", items=ELEMENT_ITEMS, default="C")
     element_colors: CollectionProperty(type=BlendMolElementColor)
 
 
@@ -240,6 +243,18 @@ def _selected_molecule_root(context) -> bpy.types.Object | None:
     return None
 
 
+def _selected_explicit_atom(context) -> tuple[bpy.types.Object, bpy.types.Collection, int] | None:
+    obj = context.active_object
+    if obj is None or obj.get("blend_mol_kind") != "atom" or obj.get("blend_mol_implicit"):
+        return None
+    root = _selected_molecule_root(context)
+    collection = _molecule_collection(root) if root else None
+    atom_index = obj.get("blend_mol_atom_index")
+    if root is None or collection is None or atom_index is None:
+        return None
+    return root, collection, atom_index
+
+
 def _clear_molecule_display(root: bpy.types.Object, collection: bpy.types.Collection) -> None:
     for obj in list(collection.objects):
         if obj != root:
@@ -392,6 +407,89 @@ class BLENDMOL_OT_sync_atom_positions(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_add_atom(Operator):
+    bl_idname = "blendmol.add_atom"
+    bl_label = "Add Atom at 3D Cursor"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        collection = _molecule_collection(root) if root else None
+        if root is None or collection is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        local_position = root.matrix_world.inverted() @ context.scene.cursor.location
+        element = context.scene.blend_mol_settings.edit_element
+        updated = Molecule(
+            molecule.name,
+            molecule.atoms + (Atom(element, tuple(local_position)),),
+            molecule.bonds,
+        )
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Added {element} at the 3D cursor")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_change_atom_element(Operator):
+    bl_idname = "blendmol.change_atom_element"
+    bl_label = "Change Selected Atom Element"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = _selected_explicit_atom(context)
+        if selected is None:
+            self.report({"WARNING"}, "Select a non-implicit Blend Mol atom first")
+            return {"CANCELLED"}
+        root, collection, atom_index = selected
+        molecule = _deserialize_molecule(root["blend_mol_data"])
+        element = context.scene.blend_mol_settings.edit_element
+        atoms = list(molecule.atoms)
+        atoms[atom_index] = Atom(element, atoms[atom_index].position)
+        updated = Molecule(molecule.name, tuple(atoms), molecule.bonds)
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Changed atom {atom_index + 1} to {element}")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_delete_atom(Operator):
+    bl_idname = "blendmol.delete_atom"
+    bl_label = "Delete Selected Atom"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = _selected_explicit_atom(context)
+        if selected is None:
+            self.report({"WARNING"}, "Select a non-implicit Blend Mol atom first")
+            return {"CANCELLED"}
+        root, collection, atom_index = selected
+        molecule = _deserialize_molecule(root["blend_mol_data"])
+        atoms = tuple(atom for index, atom in enumerate(molecule.atoms) if index != atom_index)
+        bonds = []
+        for bond in molecule.bonds:
+            if atom_index in {bond.atom_a, bond.atom_b}:
+                continue
+            bonds.append(Bond(
+                bond.atom_a - (bond.atom_a > atom_index),
+                bond.atom_b - (bond.atom_b > atom_index),
+                bond.order,
+            ))
+        updated = Molecule(molecule.name, atoms, tuple(bonds))
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Deleted atom {atom_index + 1} and its connected bonds")
+        return {"FINISHED"}
+
+
 class BLENDMOL_OT_reset_element_colors(Operator):
     bl_idname = "blendmol.reset_element_colors"
     bl_label = "Reset to CPK Colors"
@@ -448,6 +546,14 @@ class BLENDMOL_PT_panel(Panel):
             edit_box.label(text=f"Editing: {root.name}")
             edit_box.label(text="Move atom objects, then synchronize")
             edit_box.operator(BLENDMOL_OT_sync_atom_positions.bl_idname, icon="CON_TRANSFORM")
+            edit_box.separator()
+            edit_box.prop(settings, "edit_element")
+            edit_box.operator(BLENDMOL_OT_add_atom.bl_idname, icon="ADD")
+            selected_atom = _selected_explicit_atom(context)
+            if selected_atom:
+                edit_box.label(text=f"Selected atom: {selected_atom[2] + 1}")
+                edit_box.operator(BLENDMOL_OT_change_atom_element.bl_idname, icon="MODIFIER")
+                edit_box.operator(BLENDMOL_OT_delete_atom.bl_idname, icon="TRASH")
         layout.separator()
         elements = _managed_atom_elements()
         if elements:
@@ -482,6 +588,9 @@ CLASSES = (
     BLENDMOL_OT_import_v2000,
     BLENDMOL_OT_rebuild_display,
     BLENDMOL_OT_sync_atom_positions,
+    BLENDMOL_OT_add_atom,
+    BLENDMOL_OT_change_atom_element,
+    BLENDMOL_OT_delete_atom,
     BLENDMOL_OT_reset_element_colors,
     BLENDMOL_OT_add_subdivision,
     BLENDMOL_PT_panel,
