@@ -1,0 +1,12 @@
+schema_version = "1.0.0"
+
+id = "blend_mol"
+version = "0.1.0"
+name = "Blend Mol"
+tagline = "Import and visualize molecular structures"
+maintainer = "Blend Mol contributors"
+type = "add-on"
+tags = ["Import-Export", "Object"]
+blender_version_min = "5.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
