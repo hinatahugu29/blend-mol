@@ -1,4 +1,4 @@
 __pycache__/
 *.pyc
 dist/
-triphenylene_preview.png
+*_preview.png

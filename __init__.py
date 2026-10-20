@@ -34,6 +34,15 @@ ELEMENT_RADII = {"H": 0.22, "C": 0.34, "N": 0.33, "O": 0.31, "P": 0.38, "S": 0.3
 TYPICAL_VALENCE = {"C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
 
 
+def _update_element_color(item, _context) -> None:
+    """Update every displayed atom of an element as soon as its colour changes."""
+    if not item.element:
+        return
+    for obj in bpy.data.objects:
+        if obj.get("blend_mol_kind") == "atom" and obj.get("blend_mol_element") == item.element:
+            obj.color = item.color
+
+
 class BlendMolElementColor(PropertyGroup):
     element: StringProperty()
     color: FloatVectorProperty(
@@ -43,6 +52,7 @@ class BlendMolElementColor(PropertyGroup):
         min=0.0,
         max=1.0,
         default=(0.65, 0.25, 0.65, 1.0),
+        update=_update_element_color,
     )
 
 
@@ -233,25 +243,6 @@ class BLENDMOL_OT_import_v2000(Operator):
         return {"RUNNING_MODAL"}
 
 
-class BLENDMOL_OT_apply_element_colors(Operator):
-    bl_idname = "blendmol.apply_element_colors"
-    bl_label = "Apply Element Colors"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        elements = _managed_atom_elements()
-        for element in elements:
-            _palette_item(context.scene.blend_mol_settings, element)
-        updated = 0
-        for obj in bpy.data.objects:
-            if obj.get("blend_mol_kind") != "atom":
-                continue
-            obj.color = _element_color(context.scene.blend_mol_settings, obj["blend_mol_element"])
-            updated += 1
-        self.report({"INFO"}, f"Updated colors for {updated} atoms")
-        return {"FINISHED"}
-
-
 class BLENDMOL_OT_reset_element_colors(Operator):
     bl_idname = "blendmol.reset_element_colors"
     bl_label = "Reset to CPK Colors"
@@ -259,11 +250,13 @@ class BLENDMOL_OT_reset_element_colors(Operator):
 
     def execute(self, context):
         settings = context.scene.blend_mol_settings
-        for element in _managed_atom_elements():
+        elements = _managed_atom_elements()
+        for element in elements:
             _palette_item(settings, element).color = ELEMENT_COLORS.get(
                 element, (0.65, 0.25, 0.65, 1.0)
             )
-        return bpy.ops.blendmol.apply_element_colors()
+        self.report({"INFO"}, f"Reset colors for {sum(elements.values())} atoms")
+        return {"FINISHED"}
 
 
 class BLENDMOL_PT_panel(Panel):
@@ -285,7 +278,6 @@ class BLENDMOL_PT_panel(Panel):
             for element, count in sorted(elements.items()):
                 item = _palette_item(settings, element)
                 element_box.prop(item, "color", text=f"{element} ({count})")
-            element_box.operator(BLENDMOL_OT_apply_element_colors.bl_idname, icon="CHECKMARK")
             element_box.operator(BLENDMOL_OT_reset_element_colors.bl_idname, icon="LOOP_BACK")
             layout.separator()
         layout.label(text="Display defaults for next import")
@@ -300,7 +292,6 @@ CLASSES = (
     BlendMolElementColor,
     BlendMolSettings,
     BLENDMOL_OT_import_v2000,
-    BLENDMOL_OT_apply_element_colors,
     BLENDMOL_OT_reset_element_colors,
     BLENDMOL_PT_panel,
 )

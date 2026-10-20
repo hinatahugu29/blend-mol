@@ -10,7 +10,7 @@ their atom and bond graph as a ball-and-stick model.
 - Adds implicit hydrogens for the common neutral valences used by the supplied
   triphenylene example.
 - Lists the elements present in Blend Mol objects in the 3D Viewport sidebar,
-  where their colours can be changed and applied to existing molecules.
+  where their colours can be changed immediately for existing molecules.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 
