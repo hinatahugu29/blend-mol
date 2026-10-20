@@ -34,6 +34,8 @@ ELEMENT_COLORS = {
     "I": (0.36, 0.08, 0.62, 1.0),
 }
 ELEMENT_RADII = {"H": 0.22, "C": 0.34, "N": 0.33, "O": 0.31, "P": 0.38, "S": 0.38}
+COVALENT_RADII = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66, "P": 1.07, "S": 1.05,
+                   "F": 0.57, "Cl": 1.02, "Br": 1.20, "I": 1.39}
 TYPICAL_VALENCE = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
 ELEMENT_ITEMS = tuple((element, element, "") for element in ELEMENT_COLORS)
 
@@ -67,6 +69,7 @@ class BlendMolSettings(PropertyGroup):
     atom_rings: IntProperty(name="Atom Rings", default=12, min=4, max=32)
     bond_sides: IntProperty(name="Bond Sides", default=16, min=6, max=64)
     bond_order: IntProperty(name="Bond Order", default=1, min=1, max=3)
+    relax_iterations: IntProperty(name="Relax Iterations", default=60, min=1, max=500)
     subdivision_levels: IntProperty(name="Subdivision Levels", default=1, min=1, max=3)
     roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
     metallic: FloatProperty(name="Metallic", default=0.0, min=0.0, max=1.0)
@@ -337,6 +340,68 @@ def _molecule_validation_messages(molecule: Molecule) -> list[str]:
     return messages
 
 
+def _covalent_radius(element: str) -> float:
+    return COVALENT_RADII.get(element, 0.8)
+
+
+def _target_bond_length(atom_a: Atom, atom_b: Atom, order: int) -> float:
+    """Return a display-oriented bond length; this is not a UFF parameterization."""
+    return (_covalent_radius(atom_a.element) + _covalent_radius(atom_b.element)) * (
+        1.0 - 0.12 * (order - 1)
+    )
+
+
+def _relax_display_geometry(molecule: Molecule, iterations: int) -> Molecule:
+    """Lightweight bond-length and overlap relaxation for editing, not force-field optimization."""
+    positions = [Vector(atom.position) for atom in molecule.atoms]
+    bonded_pairs = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in molecule.bonds}
+    strength = 0.30
+    for _ in range(iterations):
+        for bond in molecule.bonds:
+            start, end = positions[bond.atom_a], positions[bond.atom_b]
+            delta = end - start
+            distance = delta.length
+            direction = delta.normalized() if distance > 1e-8 else Vector((1.0, 0.0, 0.0))
+            target = _target_bond_length(molecule.atoms[bond.atom_a], molecule.atoms[bond.atom_b], bond.order)
+            correction = direction * ((distance - target) * strength * 0.5)
+            positions[bond.atom_a] += correction
+            positions[bond.atom_b] -= correction
+        for atom_a in range(len(positions)):
+            for atom_b in range(atom_a + 1, len(positions)):
+                if (atom_a, atom_b) in bonded_pairs:
+                    continue
+                delta = positions[atom_b] - positions[atom_a]
+                distance = delta.length
+                minimum = 0.65 * (
+                    _covalent_radius(molecule.atoms[atom_a].element)
+                    + _covalent_radius(molecule.atoms[atom_b].element)
+                )
+                if distance >= minimum:
+                    continue
+                direction = delta.normalized() if distance > 1e-8 else Vector((1.0, 0.0, 0.0))
+                correction = direction * ((minimum - distance) * strength * 0.5)
+                positions[atom_a] -= correction
+                positions[atom_b] += correction
+    atoms = tuple(Atom(atom.element, tuple(positions[index])) for index, atom in enumerate(molecule.atoms))
+    return Molecule(molecule.name, atoms, molecule.bonds)
+
+
+def _store_position_snapshot(root: bpy.types.Object, molecule: Molecule) -> None:
+    root["blend_mol_position_snapshot"] = json.dumps(
+        [atom.position for atom in molecule.atoms], separators=(",", ":")
+    )
+
+
+def _restore_position_snapshot(root: bpy.types.Object, molecule: Molecule) -> Molecule:
+    positions = json.loads(root["blend_mol_position_snapshot"])
+    if len(positions) != len(molecule.atoms):
+        raise ValueError("The snapshot belongs to a different atom count")
+    atoms = tuple(
+        Atom(atom.element, tuple(positions[index])) for index, atom in enumerate(molecule.atoms)
+    )
+    return Molecule(molecule.name, atoms, molecule.bonds)
+
+
 def _render_molecule(
     root: bpy.types.Object, collection: bpy.types.Collection, molecule: Molecule, settings: BlendMolSettings,
 ) -> None:
@@ -598,6 +663,75 @@ class BLENDMOL_OT_delete_bond(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_relax_display_geometry(Operator):
+    bl_idname = "blendmol.relax_display_geometry"
+    bl_label = "Relax Display Geometry"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        collection = _molecule_collection(root) if root else None
+        if root is None or collection is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        _store_position_snapshot(root, molecule)
+        updated = _relax_display_geometry(molecule, context.scene.blend_mol_settings.relax_iterations)
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, "Relaxed display geometry (not UFF)")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_save_position_snapshot(Operator):
+    bl_idname = "blendmol.save_position_snapshot"
+    bl_label = "Save Position Snapshot"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        if root is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        _store_position_snapshot(root, molecule)
+        self.report({"INFO"}, f"Saved positions for {len(molecule.atoms)} atoms")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_restore_position_snapshot(Operator):
+    bl_idname = "blendmol.restore_position_snapshot"
+    bl_label = "Restore Position Snapshot"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        collection = _molecule_collection(root) if root else None
+        if root is None or collection is None or "blend_mol_position_snapshot" not in root:
+            self.report({"WARNING"}, "Select a molecule with a saved position snapshot first")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+            updated = _restore_position_snapshot(root, molecule)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Cannot restore position snapshot: {exc}")
+            return {"CANCELLED"}
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Restored positions for {len(updated.atoms)} atoms")
+        return {"FINISHED"}
+
+
 class BLENDMOL_OT_reset_element_colors(Operator):
     bl_idname = "blendmol.reset_element_colors"
     bl_label = "Reset to CPK Colors"
@@ -686,6 +820,13 @@ class BLENDMOL_PT_panel(Panel):
                 validation_box.alert = False
             else:
                 validation_box.label(text="Valence: no over-valence warnings", icon="CHECKMARK")
+            relax_box = edit_box.box()
+            relax_box.label(text="Simple display relaxation (not UFF)")
+            relax_box.prop(settings, "relax_iterations")
+            relax_box.operator(BLENDMOL_OT_relax_display_geometry.bl_idname, icon="MOD_SMOOTH")
+            relax_box.operator(BLENDMOL_OT_save_position_snapshot.bl_idname, icon="BOOKMARKS")
+            if "blend_mol_position_snapshot" in root:
+                relax_box.operator(BLENDMOL_OT_restore_position_snapshot.bl_idname, icon="LOOP_BACK")
         layout.separator()
         elements = _managed_atom_elements()
         if elements:
@@ -725,6 +866,9 @@ CLASSES = (
     BLENDMOL_OT_delete_atom,
     BLENDMOL_OT_set_bond,
     BLENDMOL_OT_delete_bond,
+    BLENDMOL_OT_relax_display_geometry,
+    BLENDMOL_OT_save_position_snapshot,
+    BLENDMOL_OT_restore_position_snapshot,
     BLENDMOL_OT_reset_element_colors,
     BLENDMOL_OT_add_subdivision,
     BLENDMOL_PT_panel,

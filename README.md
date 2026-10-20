@@ -19,6 +19,8 @@ their atom and bond graph as a ball-and-stick model.
   and deleting an explicit atom together with its connected bonds.
 - Supports creating, changing, and deleting single/double/triple bonds, with
   valence warnings for common neutral elements.
+- Includes a non-UFF display-geometry relaxation tool and position snapshots
+  for returning to a structure before relaxation.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 
