@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from molfile import read_v2000
-from uff import bond_stretch_energy, type_molecule
+from uff import angle_bend_energy, bond_stretch_energy, type_molecule
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +22,10 @@ class TestUffTyping(unittest.TestCase):
         self.assertTrue(energy.ready)
         self.assertEqual(energy.terms, 33)
         self.assertGreaterEqual(energy.energy_kcal_mol, 0.0)
+        angles = angle_bend_energy(molecule)
+        self.assertTrue(angles.ready)
+        self.assertEqual(angles.terms, 54)
+        self.assertGreaterEqual(angles.energy_kcal_mol, 0.0)
 
     def test_requires_explicit_hydrogens_for_bond_stretch_energy(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン).mol")
@@ -31,6 +35,9 @@ class TestUffTyping(unittest.TestCase):
         self.assertFalse(energy.ready)
         self.assertIsNone(energy.energy_kcal_mol)
         self.assertIn("implicit hydrogen", " ".join(energy.messages))
+        angles = angle_bend_energy(molecule)
+        self.assertFalse(angles.ready)
+        self.assertIsNone(angles.energy_kcal_mol)
 
     def test_reports_an_element_outside_the_first_supported_subset(self):
         molecule = read_v2000(ROOT / "131159-39-2(フラーレン).mol")

@@ -74,6 +74,19 @@ class UffBondStretchReport:
         return self.energy_kcal_mol is not None and not self.messages
 
 
+@dataclass(frozen=True)
+class UffAngleBendReport:
+    """Partial UFF angle-bend energy, in kcal mol⁻¹."""
+
+    energy_kcal_mol: float | None
+    terms: int
+    messages: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return self.energy_kcal_mol is not None and not self.messages
+
+
 def _type_from_max_bond(element: str, max_order: int) -> str:
     if max_order >= 3:
         return f"{element}_1"
@@ -191,3 +204,89 @@ def bond_stretch_energy(molecule: Molecule) -> UffBondStretchReport:
         distance = math.dist(first_position, second_position)
         energy += 0.5 * force_constant * (distance - equilibrium) ** 2
     return UffBondStretchReport(energy, len(molecule.bonds), ())
+
+
+def _angle_force_constant(
+    outer_first: UffParameter, center: UffParameter, outer_second: UffParameter,
+    first_bond_order: int, second_bond_order: int,
+) -> float:
+    """UFF angle constant for i-j-k, with j as the central atom."""
+
+    first_length = _equilibrium_bond_length(outer_first, center, first_bond_order)
+    second_length = _equilibrium_bond_length(center, outer_second, second_bond_order)
+    theta0 = math.radians(center.ideal_angle)
+    outer_distance_squared = (
+        first_length ** 2 + second_length ** 2
+        - 2.0 * first_length * second_length * math.cos(theta0)
+    )
+    outer_distance = math.sqrt(outer_distance_squared)
+    numerator = (
+        3.0 * first_length * second_length * math.sin(theta0) ** 2
+        - outer_distance_squared * math.cos(theta0)
+    )
+    return 664.12 * outer_first.effective_charge * outer_second.effective_charge * numerator / outer_distance ** 5
+
+
+def _uff_angle_energy(force_constant: float, observed: float, ideal: float) -> float:
+    """UFF's cosine-series bend term, with a stable linear-angle limit."""
+
+    sine = math.sin(ideal)
+    if abs(sine) < 1e-6:
+        # The UFF cosine coefficients become numerically singular at 180°.
+        # Their limiting form is evaluated harmonically in radians instead.
+        return 0.5 * force_constant * (observed - ideal) ** 2
+    cosine0 = math.cos(ideal)
+    coefficient2 = 1.0 / (4.0 * sine ** 2)
+    coefficient1 = -4.0 * coefficient2 * cosine0
+    coefficient0 = coefficient2 * (2.0 * cosine0 ** 2 + 1.0)
+    return force_constant * (
+        coefficient0
+        + coefficient1 * math.cos(observed)
+        + coefficient2 * math.cos(2.0 * observed)
+    )
+
+
+def angle_bend_energy(molecule: Molecule) -> UffAngleBendReport:
+    """Evaluate only UFF angle-bend energy for a fully explicit structure."""
+
+    typing = type_molecule(molecule)
+    messages = list(typing.messages)
+    missing_hydrogens = _implicit_hydrogen_count(molecule)
+    if missing_hydrogens:
+        messages.append(f"UFF: {missing_hydrogens} implicit hydrogen(s) must be explicit for energy evaluation")
+    if messages:
+        return UffAngleBendReport(None, 0, tuple(messages))
+
+    neighbors: list[list[tuple[int, int]]] = [[] for _ in molecule.atoms]
+    for bond in molecule.bonds:
+        neighbors[bond.atom_a].append((bond.atom_b, bond.order))
+        neighbors[bond.atom_b].append((bond.atom_a, bond.order))
+
+    energy = 0.0
+    terms = 0
+    for center_index, attached in enumerate(neighbors):
+        center_parameter = UFF_PARAMETERS[typing.types[center_index]]
+        center_position = molecule.atoms[center_index].position
+        for first_offset in range(len(attached)):
+            first_index, first_order = attached[first_offset]
+            first_parameter = UFF_PARAMETERS[typing.types[first_index]]
+            first_vector = tuple(
+                molecule.atoms[first_index].position[axis] - center_position[axis] for axis in range(3)
+            )
+            first_length = math.sqrt(sum(component ** 2 for component in first_vector))
+            for second_index, second_order in attached[first_offset + 1:]:
+                second_parameter = UFF_PARAMETERS[typing.types[second_index]]
+                second_vector = tuple(
+                    molecule.atoms[second_index].position[axis] - center_position[axis] for axis in range(3)
+                )
+                second_length = math.sqrt(sum(component ** 2 for component in second_vector))
+                if first_length < 1e-10 or second_length < 1e-10:
+                    return UffAngleBendReport(None, terms, ("UFF: overlapping atoms cannot form an angle",))
+                cosine = sum(a * b for a, b in zip(first_vector, second_vector)) / (first_length * second_length)
+                observed = math.acos(max(-1.0, min(1.0, cosine)))
+                force_constant = _angle_force_constant(
+                    first_parameter, center_parameter, second_parameter, first_order, second_order
+                )
+                energy += _uff_angle_energy(force_constant, observed, math.radians(center_parameter.ideal_angle))
+                terms += 1
+    return UffAngleBendReport(energy, terms, ())

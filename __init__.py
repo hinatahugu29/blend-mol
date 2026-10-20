@@ -19,7 +19,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
 from .molfile import Atom, Bond, Molecule, MolfileError, read_v2000
-from .uff import bond_stretch_energy, type_molecule
+from .uff import angle_bend_energy, bond_stretch_energy, type_molecule
 
 
 ELEMENT_COLORS = {
@@ -953,7 +953,14 @@ class BLENDMOL_PT_panel(Panel):
                     )
                 else:
                     uff_box.label(text="Bond stretch: needs explicit hydrogens", icon="INFO")
-                uff_box.label(text="No angle/torsion/non-bonded terms or minimisation yet")
+                angle = angle_bend_energy(molecule)
+                if angle.ready:
+                    uff_box.label(
+                        text=f"Angle bend: {angle.energy_kcal_mol:.3f} kcal/mol ({angle.terms} terms)"
+                    )
+                else:
+                    uff_box.label(text="Angle bend: needs explicit hydrogens", icon="INFO")
+                uff_box.label(text="No torsion/non-bonded terms or minimisation yet")
             else:
                 uff_box.alert = True
                 uff_box.label(text="Not ready for UFF", icon="ERROR")
