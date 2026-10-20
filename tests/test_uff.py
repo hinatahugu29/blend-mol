@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 
 from molfile import read_v2000
-from uff import angle_bend_energy, bond_stretch_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy
+from uff import angle_bend_energy, bond_stretch_energy, out_of_plane_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +35,10 @@ class TestUffTyping(unittest.TestCase):
         self.assertTrue(vdw.ready)
         self.assertGreater(vdw.terms, 0)
         self.assertTrue(math.isfinite(vdw.energy_kcal_mol))
+        inversion = out_of_plane_energy(molecule)
+        self.assertTrue(inversion.ready)
+        self.assertEqual(inversion.terms, 18)
+        self.assertGreaterEqual(inversion.energy_kcal_mol, 0.0)
         total = partial_energy(molecule)
         self.assertTrue(total.ready)
         self.assertTrue(math.isfinite(total.energy_kcal_mol))
@@ -56,6 +60,9 @@ class TestUffTyping(unittest.TestCase):
         vdw = van_der_waals_energy(molecule)
         self.assertFalse(vdw.ready)
         self.assertIsNone(vdw.energy_kcal_mol)
+        inversion = out_of_plane_energy(molecule)
+        self.assertFalse(inversion.ready)
+        self.assertIsNone(inversion.energy_kcal_mol)
         total = partial_energy(molecule)
         self.assertFalse(total.ready)
         self.assertIsNone(total.energy_kcal_mol)

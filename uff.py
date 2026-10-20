@@ -127,6 +127,19 @@ class UffPartialEnergyReport:
         return self.energy_kcal_mol is not None and not self.messages
 
 
+@dataclass(frozen=True)
+class UffOutOfPlaneReport:
+    """Partial UFF out-of-plane inversion energy, in kcal mol⁻¹."""
+
+    energy_kcal_mol: float | None
+    terms: int
+    messages: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return self.energy_kcal_mol is not None and not self.messages
+
+
 def _type_from_max_bond(element: str, max_order: int) -> str:
     if max_order >= 3:
         return f"{element}_1"
@@ -510,6 +523,63 @@ def van_der_waals_energy(molecule: Molecule) -> UffVanDerWaalsReport:
     return UffVanDerWaalsReport(energy, terms, ())
 
 
+def _out_of_plane_angle(center, first, second, third) -> float | None:
+    """Angle of the central atom out of the plane formed by three neighbors."""
+
+    first_to_center = tuple(center[axis] - first[axis] for axis in range(3))
+    first_to_second = tuple(second[axis] - first[axis] for axis in range(3))
+    first_to_third = tuple(third[axis] - first[axis] for axis in range(3))
+    normal = (
+        first_to_second[1] * first_to_third[2] - first_to_second[2] * first_to_third[1],
+        first_to_second[2] * first_to_third[0] - first_to_second[0] * first_to_third[2],
+        first_to_second[0] * first_to_third[1] - first_to_second[1] * first_to_third[0],
+    )
+    normal_length = math.sqrt(sum(component * component for component in normal))
+    center_length = math.sqrt(sum(component * component for component in first_to_center))
+    if min(normal_length, center_length) < 1e-10:
+        return None
+    sine = sum(a * b for a, b in zip(first_to_center, normal)) / (normal_length * center_length)
+    return math.asin(max(-1.0, min(1.0, sine)))
+
+
+def out_of_plane_energy(molecule: Molecule) -> UffOutOfPlaneReport:
+    """Evaluate UFF inversion energy for supported, three-coordinate centers."""
+
+    typing = type_molecule(molecule)
+    messages = list(typing.messages)
+    missing_hydrogens = _implicit_hydrogen_count(molecule)
+    if missing_hydrogens:
+        messages.append(f"UFF: {missing_hydrogens} implicit hydrogen(s) must be explicit for energy evaluation")
+    if messages:
+        return UffOutOfPlaneReport(None, 0, tuple(messages))
+
+    neighbors: list[list[int]] = [[] for _ in molecule.atoms]
+    for bond in molecule.bonds:
+        neighbors[bond.atom_a].append(bond.atom_b)
+        neighbors[bond.atom_b].append(bond.atom_a)
+    energy = 0.0
+    terms = 0
+    for center_index, attached in enumerate(neighbors):
+        if len(attached) != 3:
+            continue
+        center_type = typing.types[center_index]
+        if center_type in {"N_R", "N_2", "O_R", "O_2", "C_R", "C_2"}:
+            barrier = 6.0
+        else:
+            continue
+        angle = _out_of_plane_angle(
+            molecule.atoms[center_index].position,
+            molecule.atoms[attached[0]].position,
+            molecule.atoms[attached[1]].position,
+            molecule.atoms[attached[2]].position,
+        )
+        if angle is None:
+            return UffOutOfPlaneReport(None, terms, ("UFF: collinear neighbors cannot form an inversion plane",))
+        energy += barrier * (1.0 - math.cos(angle))
+        terms += 1
+    return UffOutOfPlaneReport(energy, terms, ())
+
+
 def partial_energy(molecule: Molecule) -> UffPartialEnergyReport:
     """Sum the implemented UFF terms; this is not a complete UFF energy yet."""
 
@@ -517,6 +587,7 @@ def partial_energy(molecule: Molecule) -> UffPartialEnergyReport:
         bond_stretch_energy(molecule),
         angle_bend_energy(molecule),
         torsion_energy(molecule),
+        out_of_plane_energy(molecule),
         van_der_waals_energy(molecule),
     )
     messages = tuple(message for report in reports for message in report.messages)
