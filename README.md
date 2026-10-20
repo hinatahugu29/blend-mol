@@ -21,6 +21,8 @@ their atom and bond graph as a ball-and-stick model.
   valence warnings for common neutral elements.
 - Includes a non-UFF display-geometry relaxation tool and position snapshots
   for returning to a structure before relaxation.
+- Lets users pin atoms so they remain fixed during display-geometry relaxation;
+  these fixed-atom constraints are retained for future UFF optimization.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 

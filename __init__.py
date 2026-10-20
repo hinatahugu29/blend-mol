@@ -351,7 +351,7 @@ def _target_bond_length(atom_a: Atom, atom_b: Atom, order: int) -> float:
     )
 
 
-def _relax_display_geometry(molecule: Molecule, iterations: int) -> Molecule:
+def _relax_display_geometry(molecule: Molecule, iterations: int, fixed_atoms: set[int]) -> Molecule:
     """Lightweight bond-length and overlap relaxation for editing, not force-field optimization."""
     positions = [Vector(atom.position) for atom in molecule.atoms]
     bonded_pairs = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in molecule.bonds}
@@ -363,9 +363,16 @@ def _relax_display_geometry(molecule: Molecule, iterations: int) -> Molecule:
             distance = delta.length
             direction = delta.normalized() if distance > 1e-8 else Vector((1.0, 0.0, 0.0))
             target = _target_bond_length(molecule.atoms[bond.atom_a], molecule.atoms[bond.atom_b], bond.order)
-            correction = direction * ((distance - target) * strength * 0.5)
-            positions[bond.atom_a] += correction
-            positions[bond.atom_b] -= correction
+            correction = direction * ((distance - target) * strength)
+            movable_a = bond.atom_a not in fixed_atoms
+            movable_b = bond.atom_b not in fixed_atoms
+            if movable_a and movable_b:
+                positions[bond.atom_a] += correction * 0.5
+                positions[bond.atom_b] -= correction * 0.5
+            elif movable_a:
+                positions[bond.atom_a] += correction
+            elif movable_b:
+                positions[bond.atom_b] -= correction
         for atom_a in range(len(positions)):
             for atom_b in range(atom_a + 1, len(positions)):
                 if (atom_a, atom_b) in bonded_pairs:
@@ -379,9 +386,16 @@ def _relax_display_geometry(molecule: Molecule, iterations: int) -> Molecule:
                 if distance >= minimum:
                     continue
                 direction = delta.normalized() if distance > 1e-8 else Vector((1.0, 0.0, 0.0))
-                correction = direction * ((minimum - distance) * strength * 0.5)
-                positions[atom_a] -= correction
-                positions[atom_b] += correction
+                correction = direction * ((minimum - distance) * strength)
+                movable_a = atom_a not in fixed_atoms
+                movable_b = atom_b not in fixed_atoms
+                if movable_a and movable_b:
+                    positions[atom_a] -= correction * 0.5
+                    positions[atom_b] += correction * 0.5
+                elif movable_a:
+                    positions[atom_a] -= correction
+                elif movable_b:
+                    positions[atom_b] += correction
     atoms = tuple(Atom(atom.element, tuple(positions[index])) for index, atom in enumerate(molecule.atoms))
     return Molecule(molecule.name, atoms, molecule.bonds)
 
@@ -390,6 +404,17 @@ def _store_position_snapshot(root: bpy.types.Object, molecule: Molecule) -> None
     root["blend_mol_position_snapshot"] = json.dumps(
         [atom.position for atom in molecule.atoms], separators=(",", ":")
     )
+
+
+def _fixed_atom_indices(root: bpy.types.Object) -> set[int]:
+    try:
+        return set(json.loads(root.get("blend_mol_fixed_atoms", "[]")))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return set()
+
+
+def _store_fixed_atom_indices(root: bpy.types.Object, indices: set[int]) -> None:
+    root["blend_mol_fixed_atoms"] = json.dumps(sorted(indices))
 
 
 def _restore_position_snapshot(root: bpy.types.Object, molecule: Molecule) -> Molecule:
@@ -603,6 +628,12 @@ class BLENDMOL_OT_delete_atom(Operator):
             ))
         updated = Molecule(molecule.name, atoms, tuple(bonds))
         root["blend_mol_data"] = _serialize_molecule(updated)
+        fixed_atoms = {
+            index - (index > atom_index)
+            for index in _fixed_atom_indices(root)
+            if index != atom_index
+        }
+        _store_fixed_atom_indices(root, fixed_atoms)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
         self.report({"INFO"}, f"Deleted atom {atom_index + 1} and its connected bonds")
@@ -680,11 +711,36 @@ class BLENDMOL_OT_relax_display_geometry(Operator):
             self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
             return {"CANCELLED"}
         _store_position_snapshot(root, molecule)
-        updated = _relax_display_geometry(molecule, context.scene.blend_mol_settings.relax_iterations)
+        updated = _relax_display_geometry(
+            molecule, context.scene.blend_mol_settings.relax_iterations, _fixed_atom_indices(root)
+        )
         root["blend_mol_data"] = _serialize_molecule(updated)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
         self.report({"INFO"}, "Relaxed display geometry (not UFF)")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_toggle_fixed_atom(Operator):
+    bl_idname = "blendmol.toggle_fixed_atom"
+    bl_label = "Toggle Fixed Selected Atom"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = _selected_explicit_atom(context)
+        if selected is None:
+            self.report({"WARNING"}, "Select a non-implicit Blend Mol atom first")
+            return {"CANCELLED"}
+        root, _collection, atom_index = selected
+        fixed_atoms = _fixed_atom_indices(root)
+        if atom_index in fixed_atoms:
+            fixed_atoms.remove(atom_index)
+            state = "unfixed"
+        else:
+            fixed_atoms.add(atom_index)
+            state = "fixed"
+        _store_fixed_atom_indices(root, fixed_atoms)
+        self.report({"INFO"}, f"Atom {atom_index + 1} is now {state}")
         return {"FINISHED"}
 
 
@@ -793,8 +849,11 @@ class BLENDMOL_PT_panel(Panel):
             edit_box.operator(BLENDMOL_OT_add_atom.bl_idname, icon="ADD")
             selected_atom = _selected_explicit_atom(context)
             if selected_atom:
-                edit_box.label(text=f"Selected atom: {selected_atom[2] + 1}")
+                fixed_atoms = _fixed_atom_indices(root)
+                state = "fixed" if selected_atom[2] in fixed_atoms else "movable"
+                edit_box.label(text=f"Selected atom: {selected_atom[2] + 1} ({state})")
                 edit_box.operator(BLENDMOL_OT_change_atom_element.bl_idname, icon="MODIFIER")
+                edit_box.operator(BLENDMOL_OT_toggle_fixed_atom.bl_idname, icon="PINNED")
                 edit_box.operator(BLENDMOL_OT_delete_atom.bl_idname, icon="TRASH")
             edit_box.separator()
             edit_box.label(text="Select two atoms to create or change a bond")
@@ -867,6 +926,7 @@ CLASSES = (
     BLENDMOL_OT_set_bond,
     BLENDMOL_OT_delete_bond,
     BLENDMOL_OT_relax_display_geometry,
+    BLENDMOL_OT_toggle_fixed_atom,
     BLENDMOL_OT_save_position_snapshot,
     BLENDMOL_OT_restore_position_snapshot,
     BLENDMOL_OT_reset_element_colors,
