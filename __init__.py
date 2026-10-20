@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 import bpy
 from bpy.props import (
     BoolProperty,
@@ -797,6 +798,14 @@ class BLENDMOL_OT_minimize_partial_uff(Operator):
             return {"CANCELLED"}
         _store_position_snapshot(root, molecule)
         root["blend_mol_data"] = _serialize_molecule(result.molecule)
+        root["blend_mol_uff_last_run"] = json.dumps({
+            "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "initial_energy_kcal_mol": result.initial_energy_kcal_mol,
+            "final_energy_kcal_mol": result.final_energy_kcal_mol,
+            "iterations": result.iterations,
+            "termination": result.termination,
+            "fixed_atoms": len(_fixed_atom_indices(root)),
+        }, separators=(",", ":"))
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, result.molecule, settings)
         self.report(
@@ -1026,6 +1035,26 @@ class BLENDMOL_PT_panel(Panel):
                     uff_box.prop(settings, "uff_iterations")
                     uff_box.prop(settings, "uff_max_step")
                     uff_box.operator(BLENDMOL_OT_minimize_partial_uff.bl_idname, icon="MOD_SMOOTH")
+                if "blend_mol_uff_last_run" in root:
+                    try:
+                        last_run = json.loads(root["blend_mol_uff_last_run"])
+                        log_box = uff_box.box()
+                        log_box.label(text="Last partial UFF minimization")
+                        log_box.label(text=last_run["timestamp"])
+                        log_box.label(
+                            text=(
+                                f"{last_run['initial_energy_kcal_mol']:.3f} → "
+                                f"{last_run['final_energy_kcal_mol']:.3f} kcal/mol"
+                            )
+                        )
+                        log_box.label(
+                            text=(
+                                f"{last_run['iterations']} accepted steps; "
+                                f"{last_run['termination']}; {last_run['fixed_atoms']} fixed"
+                            )
+                        )
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                        uff_box.label(text="Last UFF log is unreadable", icon="ERROR")
                 uff_box.label(text="No electrostatic terms; minimizer uses implemented terms only")
             else:
                 uff_box.alert = True

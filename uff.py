@@ -146,6 +146,7 @@ class UffMinimizationResult:
     initial_energy_kcal_mol: float | None
     final_energy_kcal_mol: float | None
     iterations: int
+    termination: str
     messages: tuple[str, ...]
 
     @property
@@ -633,11 +634,12 @@ def minimize_partial_energy(
     fixed = fixed_atoms or set()
     initial = partial_energy(molecule)
     if not initial.ready:
-        return UffMinimizationResult(None, None, None, 0, initial.messages)
+        return UffMinimizationResult(None, None, None, 0, "not ready", initial.messages)
     positions = [list(atom.position) for atom in molecule.atoms]
     current_energy = initial.energy_kcal_mol
     completed = 0
     finite_difference = 1e-4
+    termination = "iteration limit"
     for _ in range(iterations):
         gradient = [[0.0, 0.0, 0.0] for _atom in positions]
         for atom_index in range(len(positions)):
@@ -651,12 +653,15 @@ def minimize_partial_energy(
                 positions[atom_index][axis] += finite_difference
                 if not higher.ready or not lower.ready:
                     messages = higher.messages or lower.messages
-                    return UffMinimizationResult(None, initial.energy_kcal_mol, None, completed, messages)
+                    return UffMinimizationResult(
+                        None, initial.energy_kcal_mol, None, completed, "evaluation failed", messages
+                    )
                 gradient[atom_index][axis] = (
                     higher.energy_kcal_mol - lower.energy_kcal_mol
                 ) / (2.0 * finite_difference)
         norm = math.sqrt(sum(component * component for vector in gradient for component in vector))
         if norm < 1e-5:
+            termination = "gradient tolerance"
             break
         accepted = False
         step = max_step
@@ -677,7 +682,8 @@ def minimize_partial_energy(
                 break
             step *= 0.5
         if not accepted:
+            termination = "line search stalled"
             break
     return UffMinimizationResult(
-        _with_positions(molecule, positions), initial.energy_kcal_mol, current_energy, completed, ()
+        _with_positions(molecule, positions), initial.energy_kcal_mol, current_energy, completed, termination, ()
     )

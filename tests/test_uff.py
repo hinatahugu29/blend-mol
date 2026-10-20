@@ -49,6 +49,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertTrue(minimized.ready)
         self.assertLessEqual(minimized.final_energy_kcal_mol, minimized.initial_energy_kcal_mol)
         self.assertEqual(minimized.molecule.atoms[0].position, molecule.atoms[0].position)
+        self.assertIn(minimized.termination, {"gradient tolerance", "line search stalled", "iteration limit"})
 
     def test_requires_explicit_hydrogens_for_bond_stretch_energy(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン).mol")

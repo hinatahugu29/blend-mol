@@ -30,6 +30,8 @@ their atom and bond graph as a ball-and-stick model.
   For structures with all hydrogens explicit, it also shows the partial UFF
   bond-stretch, angle-bend, proper-torsion, inversion and van der Waals
   energies, and can minimize that explicitly labelled subset with fixed atoms.
+  Each minimization saves its start/end energy, accepted steps and stop reason
+  with the molecule in the Blender file.
   Electrostatic terms and a complete UFF optimizer are still pending.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
