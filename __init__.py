@@ -34,7 +34,7 @@ ELEMENT_COLORS = {
     "I": (0.36, 0.08, 0.62, 1.0),
 }
 ELEMENT_RADII = {"H": 0.22, "C": 0.34, "N": 0.33, "O": 0.31, "P": 0.38, "S": 0.38}
-TYPICAL_VALENCE = {"C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
+TYPICAL_VALENCE = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
 ELEMENT_ITEMS = tuple((element, element, "") for element in ELEMENT_COLORS)
 
 
@@ -66,6 +66,7 @@ class BlendMolSettings(PropertyGroup):
     atom_segments: IntProperty(name="Atom Segments", default=24, min=8, max=64)
     atom_rings: IntProperty(name="Atom Rings", default=12, min=4, max=32)
     bond_sides: IntProperty(name="Bond Sides", default=16, min=6, max=64)
+    bond_order: IntProperty(name="Bond Order", default=1, min=1, max=3)
     subdivision_levels: IntProperty(name="Subdivision Levels", default=1, min=1, max=3)
     roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
     metallic: FloatProperty(name="Metallic", default=0.0, min=0.0, max=1.0)
@@ -255,6 +256,36 @@ def _selected_explicit_atom(context) -> tuple[bpy.types.Object, bpy.types.Collec
     return root, collection, atom_index
 
 
+def _selected_explicit_atoms(context) -> tuple[bpy.types.Object, bpy.types.Collection, tuple[int, int]] | None:
+    root = _selected_molecule_root(context)
+    collection = _molecule_collection(root) if root else None
+    if root is None or collection is None:
+        return None
+    indices = []
+    for obj in context.selected_objects:
+        if obj.parent != root or obj.get("blend_mol_kind") != "atom" or obj.get("blend_mol_implicit"):
+            continue
+        atom_index = obj.get("blend_mol_atom_index")
+        if atom_index is not None:
+            indices.append(atom_index)
+    indices = tuple(sorted(set(indices)))
+    if len(indices) != 2:
+        return None
+    return root, collection, indices
+
+
+def _selected_explicit_bond(context) -> tuple[bpy.types.Object, bpy.types.Collection, int] | None:
+    obj = context.active_object
+    if obj is None or obj.get("blend_mol_kind") != "bond" or obj.get("blend_mol_implicit"):
+        return None
+    root = _selected_molecule_root(context)
+    collection = _molecule_collection(root) if root else None
+    bond_index = obj.get("blend_mol_bond_index")
+    if root is None or collection is None or bond_index is None:
+        return None
+    return root, collection, bond_index
+
+
 def _clear_molecule_display(root: bpy.types.Object, collection: bpy.types.Collection) -> None:
     for obj in list(collection.objects):
         if obj != root:
@@ -281,6 +312,29 @@ def _sync_atom_positions(root: bpy.types.Object, collection: bpy.types.Collectio
     updated = Molecule(molecule.name, updated_atoms, molecule.bonds)
     root["blend_mol_data"] = _serialize_molecule(updated)
     return updated
+
+
+def _molecule_validation_messages(molecule: Molecule) -> list[str]:
+    bond_order_sum = [0] * len(molecule.atoms)
+    messages = []
+    for bond in molecule.bonds:
+        if bond.atom_a == bond.atom_b:
+            messages.append(f"Bond connects atom {bond.atom_a + 1} to itself")
+            continue
+        if not 0 <= bond.atom_a < len(molecule.atoms) or not 0 <= bond.atom_b < len(molecule.atoms):
+            messages.append("Bond references an atom that does not exist")
+            continue
+        bond_order_sum[bond.atom_a] += bond.order
+        bond_order_sum[bond.atom_b] += bond.order
+    for index, atom in enumerate(molecule.atoms):
+        valence = TYPICAL_VALENCE.get(atom.element)
+        if valence is None:
+            messages.append(f"Atom {index + 1} ({atom.element}) has no valence rule")
+        elif bond_order_sum[index] > valence:
+            messages.append(
+                f"Atom {index + 1} ({atom.element}) has bond order {bond_order_sum[index]} > {valence}"
+            )
+    return messages
 
 
 def _render_molecule(
@@ -490,6 +544,60 @@ class BLENDMOL_OT_delete_atom(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_set_bond(Operator):
+    bl_idname = "blendmol.set_bond"
+    bl_label = "Create or Change Selected-Atom Bond"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = _selected_explicit_atoms(context)
+        if selected is None:
+            self.report({"WARNING"}, "Select exactly two non-implicit atoms in one molecule")
+            return {"CANCELLED"}
+        root, collection, (atom_a, atom_b) = selected
+        molecule = _deserialize_molecule(root["blend_mol_data"])
+        order = context.scene.blend_mol_settings.bond_order
+        bonds = list(molecule.bonds)
+        for index, bond in enumerate(bonds):
+            if {bond.atom_a, bond.atom_b} == {atom_a, atom_b}:
+                bonds[index] = Bond(bond.atom_a, bond.atom_b, order)
+                action = "Changed"
+                break
+        else:
+            bonds.append(Bond(atom_a, atom_b, order))
+            action = "Created"
+        updated = Molecule(molecule.name, molecule.atoms, tuple(bonds))
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"{action} bond {atom_a + 1}-{atom_b + 1} with order {order}")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_delete_bond(Operator):
+    bl_idname = "blendmol.delete_bond"
+    bl_label = "Delete Selected Bond"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = _selected_explicit_bond(context)
+        if selected is None:
+            self.report({"WARNING"}, "Select a non-implicit Blend Mol bond first")
+            return {"CANCELLED"}
+        root, collection, bond_index = selected
+        molecule = _deserialize_molecule(root["blend_mol_data"])
+        if not 0 <= bond_index < len(molecule.bonds):
+            self.report({"ERROR"}, "Selected bond is not part of the stored molecule data")
+            return {"CANCELLED"}
+        bonds = tuple(bond for index, bond in enumerate(molecule.bonds) if index != bond_index)
+        updated = Molecule(molecule.name, molecule.atoms, bonds)
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Deleted bond {bond_index + 1}")
+        return {"FINISHED"}
+
+
 class BLENDMOL_OT_reset_element_colors(Operator):
     bl_idname = "blendmol.reset_element_colors"
     bl_label = "Reset to CPK Colors"
@@ -554,6 +662,30 @@ class BLENDMOL_PT_panel(Panel):
                 edit_box.label(text=f"Selected atom: {selected_atom[2] + 1}")
                 edit_box.operator(BLENDMOL_OT_change_atom_element.bl_idname, icon="MODIFIER")
                 edit_box.operator(BLENDMOL_OT_delete_atom.bl_idname, icon="TRASH")
+            edit_box.separator()
+            edit_box.label(text="Select two atoms to create or change a bond")
+            edit_box.prop(settings, "bond_order")
+            edit_box.operator(BLENDMOL_OT_set_bond.bl_idname, icon="CON_TRACKTO")
+            selected_bond = _selected_explicit_bond(context)
+            if selected_bond:
+                edit_box.label(text=f"Selected bond: {selected_bond[2] + 1}")
+                edit_box.operator(BLENDMOL_OT_delete_bond.bl_idname, icon="TRASH")
+            try:
+                molecule = _deserialize_molecule(root["blend_mol_data"])
+                validation_messages = _molecule_validation_messages(molecule)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                validation_messages = ["Stored molecule data cannot be validated"]
+            validation_box = edit_box.box()
+            if validation_messages:
+                validation_box.alert = True
+                validation_box.label(text="Valence warnings", icon="ERROR")
+                for message in validation_messages[:4]:
+                    validation_box.label(text=message)
+                if len(validation_messages) > 4:
+                    validation_box.label(text=f"… and {len(validation_messages) - 4} more")
+                validation_box.alert = False
+            else:
+                validation_box.label(text="Valence: no over-valence warnings", icon="CHECKMARK")
         layout.separator()
         elements = _managed_atom_elements()
         if elements:
@@ -591,6 +723,8 @@ CLASSES = (
     BLENDMOL_OT_add_atom,
     BLENDMOL_OT_change_atom_element,
     BLENDMOL_OT_delete_atom,
+    BLENDMOL_OT_set_bond,
+    BLENDMOL_OT_delete_bond,
     BLENDMOL_OT_reset_element_colors,
     BLENDMOL_OT_add_subdivision,
     BLENDMOL_PT_panel,

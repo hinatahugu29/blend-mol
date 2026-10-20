@@ -17,6 +17,8 @@ their atom and bond graph as a ball-and-stick model.
   molecule can be rebuilt non-destructively from the **Blend Mol** sidebar.
 - Supports adding an atom at the 3D cursor, changing an explicit atom's element,
   and deleting an explicit atom together with its connected bonds.
+- Supports creating, changing, and deleting single/double/triple bonds, with
+  valence warnings for common neutral elements.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 
