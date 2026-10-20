@@ -246,6 +246,28 @@ def _clear_molecule_display(root: bpy.types.Object, collection: bpy.types.Collec
             bpy.data.objects.remove(obj, do_unlink=True)
 
 
+def _sync_atom_positions(root: bpy.types.Object, collection: bpy.types.Collection) -> Molecule:
+    """Copy user-edited displayed atom positions back into the stored molecule graph."""
+    molecule = _deserialize_molecule(root["blend_mol_data"])
+    positions: dict[int, tuple[float, float, float]] = {}
+    for obj in collection.objects:
+        if obj.get("blend_mol_kind") != "atom" or obj.get("blend_mol_implicit"):
+            continue
+        atom_index = obj.get("blend_mol_atom_index")
+        if atom_index is None:
+            continue
+        positions[atom_index] = tuple(obj.matrix_local.translation)
+    expected = set(range(len(molecule.atoms)))
+    if set(positions) != expected:
+        raise ValueError("Displayed atoms no longer match the stored molecule data")
+    updated_atoms = tuple(
+        Atom(atom.element, positions[index]) for index, atom in enumerate(molecule.atoms)
+    )
+    updated = Molecule(molecule.name, updated_atoms, molecule.bonds)
+    root["blend_mol_data"] = _serialize_molecule(updated)
+    return updated
+
+
 def _render_molecule(
     root: bpy.types.Object, collection: bpy.types.Collection, molecule: Molecule, settings: BlendMolSettings,
 ) -> None:
@@ -345,6 +367,31 @@ class BLENDMOL_OT_rebuild_display(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_sync_atom_positions(Operator):
+    bl_idname = "blendmol.sync_atom_positions"
+    bl_label = "Sync Edited Atom Positions"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        if root is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        collection = _molecule_collection(root)
+        if collection is None or "blend_mol_data" not in root:
+            self.report({"ERROR"}, "This molecule does not contain editable Blend Mol data")
+            return {"CANCELLED"}
+        try:
+            molecule = _sync_atom_positions(root, collection)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Cannot synchronize atom positions: {exc}")
+            return {"CANCELLED"}
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, molecule, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Synchronized {len(molecule.atoms)} atom positions")
+        return {"FINISHED"}
+
+
 class BLENDMOL_OT_reset_element_colors(Operator):
     bl_idname = "blendmol.reset_element_colors"
     bl_label = "Reset to CPK Colors"
@@ -395,6 +442,12 @@ class BLENDMOL_PT_panel(Panel):
         settings = context.scene.blend_mol_settings
         layout.operator(BLENDMOL_OT_import_v2000.bl_idname, icon="IMPORT")
         layout.operator(BLENDMOL_OT_rebuild_display.bl_idname, icon="FILE_REFRESH")
+        root = _selected_molecule_root(context)
+        if root:
+            edit_box = layout.box()
+            edit_box.label(text=f"Editing: {root.name}")
+            edit_box.label(text="Move atom objects, then synchronize")
+            edit_box.operator(BLENDMOL_OT_sync_atom_positions.bl_idname, icon="CON_TRANSFORM")
         layout.separator()
         elements = _managed_atom_elements()
         if elements:
@@ -428,6 +481,7 @@ CLASSES = (
     BlendMolSettings,
     BLENDMOL_OT_import_v2000,
     BLENDMOL_OT_rebuild_display,
+    BLENDMOL_OT_sync_atom_positions,
     BLENDMOL_OT_reset_element_colors,
     BLENDMOL_OT_add_subdivision,
     BLENDMOL_PT_panel,

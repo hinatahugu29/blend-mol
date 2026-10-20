@@ -30,3 +30,8 @@ Viewport sidebar.
 `217-59-4(トリフェニレン).mol` is the first import test case. It is a 2D V2000
 Molfile containing 18 carbon atoms and 21 bonds; Blend Mol displays 12 implicit
 hydrogens from its bond orders.
+
+## Roadmap
+
+The implementation roadmap, including the planned built-in UFF optimizer, is in
+[`ROADMAP.md`](ROADMAP.md).
