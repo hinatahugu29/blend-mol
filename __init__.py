@@ -7,6 +7,7 @@ import bpy
 from bpy.props import (
     BoolProperty,
     CollectionProperty,
+    IntProperty,
     FloatProperty,
     FloatVectorProperty,
     PointerProperty,
@@ -59,6 +60,10 @@ class BlendMolElementColor(PropertyGroup):
 class BlendMolSettings(PropertyGroup):
     atom_scale: FloatProperty(name="Atom Scale", default=1.0, min=0.1, max=4.0)
     bond_radius: FloatProperty(name="Bond Radius", default=0.09, min=0.01, max=0.5)
+    atom_segments: IntProperty(name="Atom Segments", default=24, min=8, max=64)
+    atom_rings: IntProperty(name="Atom Rings", default=12, min=4, max=32)
+    bond_sides: IntProperty(name="Bond Sides", default=16, min=6, max=64)
+    subdivision_levels: IntProperty(name="Subdivision Levels", default=1, min=1, max=3)
     roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
     metallic: FloatProperty(name="Metallic", default=0.0, min=0.0, max=1.0)
     show_implicit_hydrogens: BoolProperty(name="Show Implicit Hydrogens", default=True)
@@ -110,8 +115,16 @@ def _link_object(obj: bpy.types.Object, collection: bpy.types.Collection) -> Non
     collection.objects.link(obj)
 
 
-def _sphere(name: str, location: Vector, radius: float, color, material, collection, element: str) -> bpy.types.Object:
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=radius, location=location)
+def _smooth_mesh(obj: bpy.types.Object) -> None:
+    for polygon in obj.data.polygons:
+        polygon.use_smooth = True
+
+
+def _sphere(
+    name: str, location: Vector, radius: float, color, material, collection, element: str,
+    segments: int, rings: int,
+) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=location)
     obj = bpy.context.object
     for linked in list(obj.users_collection):
         linked.objects.unlink(obj)
@@ -120,13 +133,16 @@ def _sphere(name: str, location: Vector, radius: float, color, material, collect
     obj.color = color
     obj["blend_mol_kind"] = "atom"
     obj["blend_mol_element"] = element
+    _smooth_mesh(obj)
     obj.data.materials.append(material)
     return obj
 
 
-def _cylinder(name: str, start: Vector, end: Vector, radius: float, color, material, collection) -> bpy.types.Object:
+def _cylinder(
+    name: str, start: Vector, end: Vector, radius: float, color, material, collection, sides: int,
+) -> bpy.types.Object:
     direction = end - start
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=radius, depth=direction.length, location=(start + end) / 2)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=sides, radius=radius, depth=direction.length, location=(start + end) / 2)
     obj = bpy.context.object
     obj.rotation_mode = "QUATERNION"
     obj.rotation_quaternion = Vector((0.0, 0.0, 1.0)).rotation_difference(direction)
@@ -135,6 +151,8 @@ def _cylinder(name: str, start: Vector, end: Vector, radius: float, color, mater
     _link_object(obj, collection)
     obj.name = name
     obj.color = color
+    obj["blend_mol_kind"] = "bond"
+    _smooth_mesh(obj)
     obj.data.materials.append(material)
     return obj
 
@@ -199,21 +217,24 @@ def _create_molecule(molecule: Molecule, settings: BlendMolSettings, source_path
         _sphere(
             f"{atom.element}_{index + 1:03d}", Vector(atom.position),
             ELEMENT_RADII.get(atom.element, 0.34) * settings.atom_scale,
-            color, atom_material, collection, atom.element,
+            color, atom_material, collection, atom.element, settings.atom_segments, settings.atom_rings,
         )
 
     for index, bond in enumerate(molecule.bonds):
         start, end = Vector(molecule.atoms[bond.atom_a].position), Vector(molecule.atoms[bond.atom_b].position)
         for segment_index, offset in enumerate(_bond_offsets(start, end, bond.order, settings.bond_radius)):
             _cylinder(f"Bond_{index + 1:03d}_{segment_index + 1}", start + offset, end + offset,
-                      settings.bond_radius, (0.30, 0.30, 0.30, 1.0), bond_material, collection)
+                      settings.bond_radius, (0.30, 0.30, 0.30, 1.0), bond_material, collection,
+                      settings.bond_sides)
 
     if settings.show_implicit_hydrogens:
         for index, (parent, position) in enumerate(_implicit_hydrogens(molecule)):
             _cylinder(f"H_Bond_{index + 1:03d}", Vector(molecule.atoms[parent].position), position,
-                      settings.bond_radius * 0.72, (0.55, 0.55, 0.55, 1.0), bond_material, collection)
+                      settings.bond_radius * 0.72, (0.55, 0.55, 0.55, 1.0), bond_material, collection,
+                      settings.bond_sides)
             _sphere(f"H_{index + 1:03d}", position, ELEMENT_RADII["H"] * settings.atom_scale,
-                    _element_color(settings, "H"), atom_material, collection, "H")
+                    _element_color(settings, "H"), atom_material, collection, "H",
+                    settings.atom_segments, settings.atom_rings)
     for obj in collection.objects:
         if obj != root:
             obj.parent = root
@@ -259,6 +280,28 @@ class BLENDMOL_OT_reset_element_colors(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_add_subdivision(Operator):
+    bl_idname = "blendmol.add_subdivision"
+    bl_label = "Add Subdivision Surface"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        levels = context.scene.blend_mol_settings.subdivision_levels
+        updated = 0
+        for obj in bpy.data.objects:
+            if obj.get("blend_mol_kind") not in {"atom", "bond"}:
+                continue
+            modifier = obj.modifiers.get("Blend Mol Subdivision")
+            if modifier is None:
+                modifier = obj.modifiers.new("Blend Mol Subdivision", "SUBSURF")
+            modifier.subdivision_type = "CATMULL_CLARK"
+            modifier.levels = levels
+            modifier.render_levels = levels
+            updated += 1
+        self.report({"INFO"}, f"Added subdivision level {levels} to {updated} objects")
+        return {"FINISHED"}
+
+
 class BLENDMOL_PT_panel(Panel):
     bl_label = "Blend Mol"
     bl_idname = "BLENDMOL_PT_panel"
@@ -286,6 +329,16 @@ class BLENDMOL_PT_panel(Panel):
         layout.prop(settings, "roughness")
         layout.prop(settings, "metallic")
         layout.prop(settings, "show_implicit_hydrogens")
+        layout.separator()
+        mesh_box = layout.box()
+        mesh_box.label(text="Mesh detail")
+        mesh_box.label(text="Defaults for next import")
+        mesh_box.prop(settings, "atom_segments")
+        mesh_box.prop(settings, "atom_rings")
+        mesh_box.prop(settings, "bond_sides")
+        mesh_box.separator()
+        mesh_box.prop(settings, "subdivision_levels")
+        mesh_box.operator(BLENDMOL_OT_add_subdivision.bl_idname, icon="MOD_SUBSURF")
 
 
 CLASSES = (
@@ -293,6 +346,7 @@ CLASSES = (
     BlendMolSettings,
     BLENDMOL_OT_import_v2000,
     BLENDMOL_OT_reset_element_colors,
+    BLENDMOL_OT_add_subdivision,
     BLENDMOL_PT_panel,
 )
 
