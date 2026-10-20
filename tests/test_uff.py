@@ -3,7 +3,10 @@ import math
 from pathlib import Path
 
 from molfile import read_v2000
-from uff import angle_bend_energy, bond_stretch_energy, out_of_plane_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy
+from uff import (
+    angle_bend_energy, bond_stretch_energy, minimize_partial_energy,
+    out_of_plane_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +45,10 @@ class TestUffTyping(unittest.TestCase):
         total = partial_energy(molecule)
         self.assertTrue(total.ready)
         self.assertTrue(math.isfinite(total.energy_kcal_mol))
+        minimized = minimize_partial_energy(molecule, 2, 0.01, {0})
+        self.assertTrue(minimized.ready)
+        self.assertLessEqual(minimized.final_energy_kcal_mol, minimized.initial_energy_kcal_mol)
+        self.assertEqual(minimized.molecule.atoms[0].position, molecule.atoms[0].position)
 
     def test_requires_explicit_hydrogens_for_bond_stretch_energy(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン).mol")

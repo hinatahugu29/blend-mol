@@ -29,7 +29,8 @@ their atom and bond graph as a ball-and-stick model.
   UFF types for H/C/N/O/F and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF
   bond-stretch, angle-bend, proper-torsion, inversion and van der Waals
-  energies; electrostatic terms and optimization are still pending.
+  energies, and can minimize that explicitly labelled subset with fixed atoms.
+  Electrostatic terms and a complete UFF optimizer are still pending.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 

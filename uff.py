@@ -12,9 +12,9 @@ from dataclasses import dataclass
 import math
 
 try:
-    from .molfile import Molecule
+    from .molfile import Atom, Molecule
 except ImportError:  # Enables the small module to be tested outside Blender.
-    from molfile import Molecule
+    from molfile import Atom, Molecule
 
 
 @dataclass(frozen=True)
@@ -138,6 +138,19 @@ class UffOutOfPlaneReport:
     @property
     def ready(self) -> bool:
         return self.energy_kcal_mol is not None and not self.messages
+
+
+@dataclass(frozen=True)
+class UffMinimizationResult:
+    molecule: Molecule | None
+    initial_energy_kcal_mol: float | None
+    final_energy_kcal_mol: float | None
+    iterations: int
+    messages: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return self.molecule is not None and not self.messages
 
 
 def _type_from_max_bond(element: str, max_order: int) -> str:
@@ -594,3 +607,77 @@ def partial_energy(molecule: Molecule) -> UffPartialEnergyReport:
     if messages:
         return UffPartialEnergyReport(None, messages)
     return UffPartialEnergyReport(sum(report.energy_kcal_mol for report in reports), ())
+
+
+def _with_positions(molecule: Molecule, positions: list[list[float]]) -> Molecule:
+    return Molecule(
+        molecule.name,
+        tuple(
+            Atom(atom.element, tuple(positions[index]), atom.formal_charge)
+            for index, atom in enumerate(molecule.atoms)
+        ),
+        molecule.bonds,
+    )
+
+
+def minimize_partial_energy(
+    molecule: Molecule, iterations: int, max_step: float, fixed_atoms: set[int] | None = None,
+) -> UffMinimizationResult:
+    """Minimize the implemented UFF subset using finite differences.
+
+    This intentionally uses a bounded, backtracking steepest-descent step: it
+    is slower than analytical gradients but keeps the first Blender-native
+    optimizer auditable and makes it straightforward to honour fixed atoms.
+    """
+
+    fixed = fixed_atoms or set()
+    initial = partial_energy(molecule)
+    if not initial.ready:
+        return UffMinimizationResult(None, None, None, 0, initial.messages)
+    positions = [list(atom.position) for atom in molecule.atoms]
+    current_energy = initial.energy_kcal_mol
+    completed = 0
+    finite_difference = 1e-4
+    for _ in range(iterations):
+        gradient = [[0.0, 0.0, 0.0] for _atom in positions]
+        for atom_index in range(len(positions)):
+            if atom_index in fixed:
+                continue
+            for axis in range(3):
+                positions[atom_index][axis] += finite_difference
+                higher = partial_energy(_with_positions(molecule, positions))
+                positions[atom_index][axis] -= 2.0 * finite_difference
+                lower = partial_energy(_with_positions(molecule, positions))
+                positions[atom_index][axis] += finite_difference
+                if not higher.ready or not lower.ready:
+                    messages = higher.messages or lower.messages
+                    return UffMinimizationResult(None, initial.energy_kcal_mol, None, completed, messages)
+                gradient[atom_index][axis] = (
+                    higher.energy_kcal_mol - lower.energy_kcal_mol
+                ) / (2.0 * finite_difference)
+        norm = math.sqrt(sum(component * component for vector in gradient for component in vector))
+        if norm < 1e-5:
+            break
+        accepted = False
+        step = max_step
+        while step >= max_step / 128.0:
+            candidate_positions = [position[:] for position in positions]
+            for atom_index, vector in enumerate(gradient):
+                if atom_index in fixed:
+                    continue
+                for axis in range(3):
+                    candidate_positions[atom_index][axis] -= step * vector[axis] / norm
+            candidate = _with_positions(molecule, candidate_positions)
+            evaluation = partial_energy(candidate)
+            if evaluation.ready and evaluation.energy_kcal_mol < current_energy:
+                positions = candidate_positions
+                current_energy = evaluation.energy_kcal_mol
+                accepted = True
+                completed += 1
+                break
+            step *= 0.5
+        if not accepted:
+            break
+    return UffMinimizationResult(
+        _with_positions(molecule, positions), initial.energy_kcal_mol, current_energy, completed, ()
+    )

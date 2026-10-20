@@ -19,7 +19,10 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
 from .molfile import Atom, Bond, Molecule, MolfileError, read_v2000
-from .uff import angle_bend_energy, bond_stretch_energy, out_of_plane_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy
+from .uff import (
+    angle_bend_energy, bond_stretch_energy, minimize_partial_energy,
+    out_of_plane_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy,
+)
 
 
 ELEMENT_COLORS = {
@@ -72,6 +75,8 @@ class BlendMolSettings(PropertyGroup):
     bond_order: IntProperty(name="Bond Order", default=1, min=1, max=3)
     formal_charge: IntProperty(name="Formal Charge", default=0, min=-3, max=3)
     relax_iterations: IntProperty(name="Relax Iterations", default=60, min=1, max=500)
+    uff_iterations: IntProperty(name="UFF Iterations", default=30, min=1, max=300)
+    uff_max_step: FloatProperty(name="UFF Max Step", default=0.02, min=0.001, max=0.10)
     subdivision_levels: IntProperty(name="Subdivision Levels", default=1, min=1, max=3)
     roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
     metallic: FloatProperty(name="Metallic", default=0.0, min=0.0, max=1.0)
@@ -767,6 +772,40 @@ class BLENDMOL_OT_relax_display_geometry(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_minimize_partial_uff(Operator):
+    bl_idname = "blendmol.minimize_partial_uff"
+    bl_label = "Minimize Partial UFF"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        collection = _molecule_collection(root) if root else None
+        if root is None or collection is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        settings = context.scene.blend_mol_settings
+        result = minimize_partial_energy(
+            molecule, settings.uff_iterations, settings.uff_max_step, _fixed_atom_indices(root)
+        )
+        if not result.ready:
+            self.report({"ERROR"}, result.messages[0] if result.messages else "UFF minimization failed")
+            return {"CANCELLED"}
+        _store_position_snapshot(root, molecule)
+        root["blend_mol_data"] = _serialize_molecule(result.molecule)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, result.molecule, settings)
+        self.report(
+            {"INFO"},
+            f"Partial UFF: {result.initial_energy_kcal_mol:.3f} → {result.final_energy_kcal_mol:.3f} kcal/mol"
+        )
+        return {"FINISHED"}
+
+
 class BLENDMOL_OT_toggle_fixed_atom(Operator):
     bl_idname = "blendmol.toggle_fixed_atom"
     bl_label = "Toggle Fixed Selected Atom"
@@ -984,7 +1023,10 @@ class BLENDMOL_PT_panel(Panel):
                 total = partial_energy(molecule)
                 if total.ready:
                     uff_box.label(text=f"Partial UFF total: {total.energy_kcal_mol:.3f} kcal/mol")
-                uff_box.label(text="No electrostatic terms or minimisation yet")
+                    uff_box.prop(settings, "uff_iterations")
+                    uff_box.prop(settings, "uff_max_step")
+                    uff_box.operator(BLENDMOL_OT_minimize_partial_uff.bl_idname, icon="MOD_SMOOTH")
+                uff_box.label(text="No electrostatic terms; minimizer uses implemented terms only")
             else:
                 uff_box.alert = True
                 uff_box.label(text="Not ready for UFF", icon="ERROR")
@@ -1041,6 +1083,7 @@ CLASSES = (
     BLENDMOL_OT_set_bond,
     BLENDMOL_OT_delete_bond,
     BLENDMOL_OT_relax_display_geometry,
+    BLENDMOL_OT_minimize_partial_uff,
     BLENDMOL_OT_toggle_fixed_atom,
     BLENDMOL_OT_save_position_snapshot,
     BLENDMOL_OT_restore_position_snapshot,
