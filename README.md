@@ -28,8 +28,8 @@ their atom and bond graph as a ball-and-stick model.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/F and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF
-  bond-stretch and angle-bend energies; torsion, non-bonded terms and
-  optimization are still pending.
+  bond-stretch, angle-bend and proper-torsion energies; inversion, non-bonded
+  terms and optimization are still pending.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 
