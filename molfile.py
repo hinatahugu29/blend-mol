@@ -10,6 +10,7 @@ from pathlib import Path
 class Atom:
     element: str
     position: tuple[float, float, float]
+    formal_charge: int = 0
 
 
 @dataclass(frozen=True)
@@ -41,11 +42,36 @@ def _parse_atom(line: str, line_number: int) -> Atom:
     try:
         position = (float(line[0:10]), float(line[10:20]), float(line[20:30]))
         element = line[31:34].strip()
+        charge_code = int(line[36:39] or "0")
     except ValueError as exc:
         raise MolfileError(f"Atom record on line {line_number} is invalid.") from exc
     if not element:
         raise MolfileError(f"Atom record on line {line_number} has no element.")
-    return Atom(element=element, position=position)
+    charge = {0: 0, 1: 3, 2: 2, 3: 1, 4: 0, 5: -1, 6: -2, 7: -3}.get(charge_code)
+    if charge is None:
+        raise MolfileError(f"Atom record on line {line_number} has unsupported charge code.")
+    return Atom(element=element, position=position, formal_charge=charge)
+
+
+def _apply_m_chg(atoms: tuple[Atom, ...], lines: list[str]) -> tuple[Atom, ...]:
+    updated = list(atoms)
+    for line in lines:
+        if not line.startswith("M  CHG"):
+            continue
+        fields = line.split()
+        try:
+            count = int(fields[2])
+            values = fields[3:]
+            if len(values) != count * 2:
+                raise ValueError
+            for offset in range(0, len(values), 2):
+                atom_index = int(values[offset]) - 1
+                formal_charge = int(values[offset + 1])
+                atom = updated[atom_index]
+                updated[atom_index] = Atom(atom.element, atom.position, formal_charge)
+        except (IndexError, ValueError) as exc:
+            raise MolfileError("M CHG record is invalid.") from exc
+    return tuple(updated)
 
 
 def _parse_bond(line: str, line_number: int, atom_count: int) -> Bond:
@@ -86,4 +112,5 @@ def read_v2000(path: str | Path) -> Molecule:
         _parse_bond(lines[4 + atom_count + index], 5 + atom_count + index, atom_count)
         for index in range(bond_count)
     )
+    atoms = _apply_m_chg(atoms, lines[expected_lines:])
     return Molecule(name=lines[0].strip() or source.stem, atoms=atoms, bonds=bonds)

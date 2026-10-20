@@ -26,6 +26,13 @@ class TestTriphenyleneMolfile(unittest.TestCase):
         self.assertEqual(sum(atom.element == "H" for atom in molecule.atoms), 12)
         self.assertTrue(any(atom.position[2] != 0.0 for atom in molecule.atoms))
 
+    def test_reads_formal_charge_from_m_chg_record(self):
+        molecule = read_v2000(ROOT / "tests" / "charged_ammonium.mol")
+
+        self.assertEqual(molecule.atoms[0].element, "N")
+        self.assertEqual(molecule.atoms[0].formal_charge, 1)
+        self.assertEqual(molecule.atoms[1].formal_charge, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

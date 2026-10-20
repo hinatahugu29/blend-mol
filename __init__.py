@@ -69,6 +69,7 @@ class BlendMolSettings(PropertyGroup):
     atom_rings: IntProperty(name="Atom Rings", default=12, min=4, max=32)
     bond_sides: IntProperty(name="Bond Sides", default=16, min=6, max=64)
     bond_order: IntProperty(name="Bond Order", default=1, min=1, max=3)
+    formal_charge: IntProperty(name="Formal Charge", default=0, min=-3, max=3)
     relax_iterations: IntProperty(name="Relax Iterations", default=60, min=1, max=500)
     subdivision_levels: IntProperty(name="Subdivision Levels", default=1, min=1, max=3)
     roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
@@ -90,6 +91,15 @@ def _palette_item(settings: BlendMolSettings, element: str) -> BlendMolElementCo
 
 def _element_color(settings: BlendMolSettings, element: str) -> tuple[float, float, float, float]:
     return tuple(_palette_item(settings, element).color)
+
+
+def _target_valence(atom: Atom) -> int | None:
+    """Common valence rule used for implicit hydrogens and basic validation."""
+    if atom.element == "N" and atom.formal_charge > 0:
+        return 4
+    if atom.element == "O" and atom.formal_charge < 0:
+        return 1
+    return TYPICAL_VALENCE.get(atom.element)
 
 
 def _managed_atom_elements() -> dict[str, int]:
@@ -198,7 +208,7 @@ def _implicit_hydrogens(molecule: Molecule) -> list[tuple[int, Vector]]:
 
     hydrogens = []
     for atom_index, atom in enumerate(molecule.atoms):
-        count = max(0, TYPICAL_VALENCE.get(atom.element, 0) - bond_order_sum[atom_index])
+        count = max(0, (_target_valence(atom) or 0) - bond_order_sum[atom_index])
         if not count:
             continue
         origin = Vector(atom.position)
@@ -219,7 +229,10 @@ def _implicit_hydrogens(molecule: Molecule) -> list[tuple[int, Vector]]:
 def _serialize_molecule(molecule: Molecule) -> str:
     return json.dumps({
         "name": molecule.name,
-        "atoms": [{"element": atom.element, "position": atom.position} for atom in molecule.atoms],
+        "atoms": [
+            {"element": atom.element, "position": atom.position, "formal_charge": atom.formal_charge}
+            for atom in molecule.atoms
+        ],
         "bonds": [{"atom_a": bond.atom_a, "atom_b": bond.atom_b, "order": bond.order} for bond in molecule.bonds],
     }, separators=(",", ":"))
 
@@ -228,7 +241,10 @@ def _deserialize_molecule(payload: str) -> Molecule:
     data = json.loads(payload)
     return Molecule(
         name=data["name"],
-        atoms=tuple(Atom(atom["element"], tuple(atom["position"])) for atom in data["atoms"]),
+        atoms=tuple(
+            Atom(atom["element"], tuple(atom["position"]), atom.get("formal_charge", 0))
+            for atom in data["atoms"]
+        ),
         bonds=tuple(Bond(bond["atom_a"], bond["atom_b"], bond["order"]) for bond in data["bonds"]),
     )
 
@@ -310,7 +326,8 @@ def _sync_atom_positions(root: bpy.types.Object, collection: bpy.types.Collectio
     if set(positions) != expected:
         raise ValueError("Displayed atoms no longer match the stored molecule data")
     updated_atoms = tuple(
-        Atom(atom.element, positions[index]) for index, atom in enumerate(molecule.atoms)
+        Atom(atom.element, positions[index], atom.formal_charge)
+        for index, atom in enumerate(molecule.atoms)
     )
     updated = Molecule(molecule.name, updated_atoms, molecule.bonds)
     root["blend_mol_data"] = _serialize_molecule(updated)
@@ -330,7 +347,7 @@ def _molecule_validation_messages(molecule: Molecule) -> list[str]:
         bond_order_sum[bond.atom_a] += bond.order
         bond_order_sum[bond.atom_b] += bond.order
     for index, atom in enumerate(molecule.atoms):
-        valence = TYPICAL_VALENCE.get(atom.element)
+        valence = _target_valence(atom)
         if valence is None:
             messages.append(f"Atom {index + 1} ({atom.element}) has no valence rule")
         elif bond_order_sum[index] > valence:
@@ -396,7 +413,10 @@ def _relax_display_geometry(molecule: Molecule, iterations: int, fixed_atoms: se
                     positions[atom_a] -= correction
                 elif movable_b:
                     positions[atom_b] += correction
-    atoms = tuple(Atom(atom.element, tuple(positions[index])) for index, atom in enumerate(molecule.atoms))
+    atoms = tuple(
+        Atom(atom.element, tuple(positions[index]), atom.formal_charge)
+        for index, atom in enumerate(molecule.atoms)
+    )
     return Molecule(molecule.name, atoms, molecule.bonds)
 
 
@@ -422,7 +442,8 @@ def _restore_position_snapshot(root: bpy.types.Object, molecule: Molecule) -> Mo
     if len(positions) != len(molecule.atoms):
         raise ValueError("The snapshot belongs to a different atom count")
     atoms = tuple(
-        Atom(atom.element, tuple(positions[index])) for index, atom in enumerate(molecule.atoms)
+        Atom(atom.element, tuple(positions[index]), atom.formal_charge)
+        for index, atom in enumerate(molecule.atoms)
     )
     return Molecule(molecule.name, atoms, molecule.bonds)
 
@@ -571,7 +592,7 @@ class BLENDMOL_OT_add_atom(Operator):
         element = context.scene.blend_mol_settings.edit_element
         updated = Molecule(
             molecule.name,
-            molecule.atoms + (Atom(element, tuple(local_position)),),
+            molecule.atoms + (Atom(element, tuple(local_position), context.scene.blend_mol_settings.formal_charge),),
             molecule.bonds,
         )
         root["blend_mol_data"] = _serialize_molecule(updated)
@@ -595,12 +616,36 @@ class BLENDMOL_OT_change_atom_element(Operator):
         molecule = _deserialize_molecule(root["blend_mol_data"])
         element = context.scene.blend_mol_settings.edit_element
         atoms = list(molecule.atoms)
-        atoms[atom_index] = Atom(element, atoms[atom_index].position)
+        atoms[atom_index] = Atom(element, atoms[atom_index].position, atoms[atom_index].formal_charge)
         updated = Molecule(molecule.name, tuple(atoms), molecule.bonds)
         root["blend_mol_data"] = _serialize_molecule(updated)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
         self.report({"INFO"}, f"Changed atom {atom_index + 1} to {element}")
+        return {"FINISHED"}
+
+
+class BLENDMOL_OT_set_formal_charge(Operator):
+    bl_idname = "blendmol.set_formal_charge"
+    bl_label = "Set Selected Atom Charge"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = _selected_explicit_atom(context)
+        if selected is None:
+            self.report({"WARNING"}, "Select a non-implicit Blend Mol atom first")
+            return {"CANCELLED"}
+        root, collection, atom_index = selected
+        molecule = _deserialize_molecule(root["blend_mol_data"])
+        charge = context.scene.blend_mol_settings.formal_charge
+        atoms = list(molecule.atoms)
+        atom = atoms[atom_index]
+        atoms[atom_index] = Atom(atom.element, atom.position, charge)
+        updated = Molecule(molecule.name, tuple(atoms), molecule.bonds)
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
+        self.report({"INFO"}, f"Set atom {atom_index + 1} charge to {charge:+d}")
         return {"FINISHED"}
 
 
@@ -846,13 +891,17 @@ class BLENDMOL_PT_panel(Panel):
             edit_box.operator(BLENDMOL_OT_sync_atom_positions.bl_idname, icon="CON_TRANSFORM")
             edit_box.separator()
             edit_box.prop(settings, "edit_element")
+            edit_box.prop(settings, "formal_charge")
             edit_box.operator(BLENDMOL_OT_add_atom.bl_idname, icon="ADD")
             selected_atom = _selected_explicit_atom(context)
             if selected_atom:
                 fixed_atoms = _fixed_atom_indices(root)
                 state = "fixed" if selected_atom[2] in fixed_atoms else "movable"
-                edit_box.label(text=f"Selected atom: {selected_atom[2] + 1} ({state})")
+                molecule = _deserialize_molecule(root["blend_mol_data"])
+                charge = molecule.atoms[selected_atom[2]].formal_charge
+                edit_box.label(text=f"Selected atom: {selected_atom[2] + 1} ({state}, {charge:+d})")
                 edit_box.operator(BLENDMOL_OT_change_atom_element.bl_idname, icon="MODIFIER")
+                edit_box.operator(BLENDMOL_OT_set_formal_charge.bl_idname, icon="ADD")
                 edit_box.operator(BLENDMOL_OT_toggle_fixed_atom.bl_idname, icon="PINNED")
                 edit_box.operator(BLENDMOL_OT_delete_atom.bl_idname, icon="TRASH")
             edit_box.separator()
@@ -922,6 +971,7 @@ CLASSES = (
     BLENDMOL_OT_sync_atom_positions,
     BLENDMOL_OT_add_atom,
     BLENDMOL_OT_change_atom_element,
+    BLENDMOL_OT_set_formal_charge,
     BLENDMOL_OT_delete_atom,
     BLENDMOL_OT_set_bond,
     BLENDMOL_OT_delete_bond,

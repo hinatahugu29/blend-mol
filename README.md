@@ -5,7 +5,8 @@ their atom and bond graph as a ball-and-stick model.
 
 ## Current scope
 
-- Imports atom coordinates and single, double, and triple bonds from MDL V2000 MOL files.
+- Imports atom coordinates, single/double/triple bonds, and formal charges
+  (including `M  CHG` records) from MDL V2000 MOL files.
 - Draws atoms with an element colour and bonds as cylinders.
 - Adds implicit hydrogens for the common neutral valences used by the supplied
   triphenylene example.
@@ -15,8 +16,9 @@ their atom and bond graph as a ball-and-stick model.
   Surface command for existing atoms and bonds.
 - Stores the imported atom and bond graph on the molecule root, so the selected
   molecule can be rebuilt non-destructively from the **Blend Mol** sidebar.
-- Supports adding an atom at the 3D cursor, changing an explicit atom's element,
-  and deleting an explicit atom together with its connected bonds.
+- Supports adding an atom at the 3D cursor, changing an explicit atom's element
+  or formal charge, and deleting an explicit atom together with its connected
+  bonds.
 - Supports creating, changing, and deleting single/double/triple bonds, with
   valence warnings for common neutral elements.
 - Includes a non-UFF display-geometry relaxation tool and position snapshots
