@@ -19,7 +19,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
 from .molfile import Atom, Bond, Molecule, MolfileError, read_v2000
-from .uff import angle_bend_energy, bond_stretch_energy, torsion_energy, type_molecule
+from .uff import angle_bend_energy, bond_stretch_energy, partial_energy, torsion_energy, type_molecule, van_der_waals_energy
 
 
 ELEMENT_COLORS = {
@@ -967,7 +967,17 @@ class BLENDMOL_PT_panel(Panel):
                     )
                 else:
                     uff_box.label(text="Torsion: needs explicit hydrogens", icon="INFO")
-                uff_box.label(text="No inversion/non-bonded terms or minimisation yet")
+                vdw = van_der_waals_energy(molecule)
+                if vdw.ready:
+                    uff_box.label(
+                        text=f"van der Waals: {vdw.energy_kcal_mol:.3f} kcal/mol ({vdw.terms} terms)"
+                    )
+                else:
+                    uff_box.label(text="van der Waals: needs explicit hydrogens", icon="INFO")
+                total = partial_energy(molecule)
+                if total.ready:
+                    uff_box.label(text=f"Partial UFF total: {total.energy_kcal_mol:.3f} kcal/mol")
+                uff_box.label(text="No inversion/electrostatic terms or minimisation yet")
             else:
                 uff_box.alert = True
                 uff_box.label(text="Not ready for UFF", icon="ERROR")

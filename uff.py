@@ -102,6 +102,31 @@ class UffTorsionReport:
         return self.energy_kcal_mol is not None and not self.messages
 
 
+@dataclass(frozen=True)
+class UffVanDerWaalsReport:
+    """Partial UFF Lennard-Jones 12-6 energy, in kcal mol⁻¹."""
+
+    energy_kcal_mol: float | None
+    terms: int
+    messages: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return self.energy_kcal_mol is not None and not self.messages
+
+
+@dataclass(frozen=True)
+class UffPartialEnergyReport:
+    """The currently implemented, explicitly labelled subset of UFF energy."""
+
+    energy_kcal_mol: float | None
+    messages: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return self.energy_kcal_mol is not None and not self.messages
+
+
 def _type_from_max_bond(element: str, max_order: int) -> str:
     if max_order >= 3:
         return f"{element}_1"
@@ -430,3 +455,71 @@ def torsion_energy(molecule: Molecule) -> UffTorsionReport:
                 energy += barrier * (1.0 - cosine_ideal * math.cos(periodicity * angle))
                 terms += 1
     return UffTorsionReport(energy, terms, ())
+
+
+def van_der_waals_energy(molecule: Molecule) -> UffVanDerWaalsReport:
+    """Evaluate UFF's non-bonded 12-6 term for non-1-2/non-1-3 pairs.
+
+    The current prototype is for isolated molecules: it uses a 10 Å cutoff and
+    has no periodic-cell or electrostatic treatment.
+    """
+
+    typing = type_molecule(molecule)
+    messages = list(typing.messages)
+    missing_hydrogens = _implicit_hydrogen_count(molecule)
+    if missing_hydrogens:
+        messages.append(f"UFF: {missing_hydrogens} implicit hydrogen(s) must be explicit for energy evaluation")
+    if messages:
+        return UffVanDerWaalsReport(None, 0, tuple(messages))
+
+    excluded: set[tuple[int, int]] = set()
+    neighbors: list[set[int]] = [set() for _ in molecule.atoms]
+    for bond in molecule.bonds:
+        first, second = sorted((bond.atom_a, bond.atom_b))
+        excluded.add((first, second))
+        neighbors[bond.atom_a].add(bond.atom_b)
+        neighbors[bond.atom_b].add(bond.atom_a)
+    for center, attached in enumerate(neighbors):
+        for first in attached:
+            for second in attached:
+                if first < second:
+                    excluded.add((first, second))
+
+    energy = 0.0
+    terms = 0
+    cutoff_squared = 100.0
+    for first in range(len(molecule.atoms)):
+        first_parameter = UFF_PARAMETERS[typing.types[first]]
+        for second in range(first + 1, len(molecule.atoms)):
+            if (first, second) in excluded:
+                continue
+            first_position = molecule.atoms[first].position
+            second_position = molecule.atoms[second].position
+            distance_squared = sum(
+                (first_position[axis] - second_position[axis]) ** 2 for axis in range(3)
+            )
+            if distance_squared > cutoff_squared:
+                continue
+            second_parameter = UFF_PARAMETERS[typing.types[second]]
+            depth = math.sqrt(first_parameter.vdw_well_depth * second_parameter.vdw_well_depth)
+            distance = math.sqrt(first_parameter.vdw_distance * second_parameter.vdw_distance)
+            distance_sixth = distance ** 6
+            observed_sixth = max(distance_squared ** 3, 1e-6)
+            energy += depth * (distance_sixth ** 2 / observed_sixth ** 2 - 2.0 * distance_sixth / observed_sixth)
+            terms += 1
+    return UffVanDerWaalsReport(energy, terms, ())
+
+
+def partial_energy(molecule: Molecule) -> UffPartialEnergyReport:
+    """Sum the implemented UFF terms; this is not a complete UFF energy yet."""
+
+    reports = (
+        bond_stretch_energy(molecule),
+        angle_bend_energy(molecule),
+        torsion_energy(molecule),
+        van_der_waals_energy(molecule),
+    )
+    messages = tuple(message for report in reports for message in report.messages)
+    if messages:
+        return UffPartialEnergyReport(None, messages)
+    return UffPartialEnergyReport(sum(report.energy_kcal_mol for report in reports), ())
