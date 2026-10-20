@@ -19,6 +19,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
 from .molfile import Atom, Bond, Molecule, MolfileError, read_v2000
+from .uff import type_molecule
 
 
 ELEMENT_COLORS = {
@@ -928,6 +929,32 @@ class BLENDMOL_PT_panel(Panel):
                 validation_box.alert = False
             else:
                 validation_box.label(text="Valence: no over-valence warnings", icon="CHECKMARK")
+            try:
+                uff_report = type_molecule(molecule)
+            except (IndexError, TypeError, ValueError):
+                uff_report = None
+            uff_box = edit_box.box()
+            uff_box.label(text="UFF preparation (typing only)")
+            if uff_report is None:
+                uff_box.alert = True
+                uff_box.label(text="Cannot inspect stored molecule", icon="ERROR")
+                uff_box.alert = False
+            elif uff_report.ready:
+                counts: dict[str, int] = {}
+                for atom_type in uff_report.types:
+                    counts[atom_type] = counts.get(atom_type, 0) + 1
+                summary = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
+                uff_box.label(text="Ready for implemented UFF terms", icon="CHECKMARK")
+                uff_box.label(text=summary)
+                uff_box.label(text="Energy minimisation is not implemented yet")
+            else:
+                uff_box.alert = True
+                uff_box.label(text="Not ready for UFF", icon="ERROR")
+                for message in uff_report.messages[:3]:
+                    uff_box.label(text=message)
+                if len(uff_report.messages) > 3:
+                    uff_box.label(text=f"… and {len(uff_report.messages) - 3} more")
+                uff_box.alert = False
             relax_box = edit_box.box()
             relax_box.label(text="Simple display relaxation (not UFF)")
             relax_box.prop(settings, "relax_iterations")

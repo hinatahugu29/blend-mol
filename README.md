@@ -25,6 +25,9 @@ their atom and bond graph as a ball-and-stick model.
   for returning to a structure before relaxation.
 - Lets users pin atoms so they remain fixed during display-geometry relaxation;
   these fixed-atom constraints are retained for future UFF optimization.
+- Includes an in-panel UFF preparation check. It currently assigns conservative
+  UFF types for H/C/N/O/F and reports atoms outside that supported subset;
+  it does not yet evaluate UFF energy or optimize coordinates.
 - Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
   generation is deliberately not part of this first prototype.
 
