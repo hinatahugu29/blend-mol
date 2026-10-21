@@ -24,6 +24,22 @@ ROADMAP.md, none of it under `--python-exit-code 1`:
 & 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_crud_lifecycle.py
 ```
 
+Exercise every `BLENDMOL_PT_*` panel's `draw()` across ten selection states
+(no selection, root only, one/two/three/four atoms, a bond, stored
+constraints, after a real minimization, a saved snapshot, a fixed atom).
+`--background` mode has no area/region, so this substitutes a minimal fake
+`UILayout` implementing only the methods the panels call, to catch any
+`AttributeError`/`TypeError` from the panel code itself without needing a
+real GUI session:
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_panel_draw.py
+```
+
+This cannot check visual layout (spacing, button sizing, which panel is
+collapsed) -- only that every panel's `draw()` runs to completion without
+raising. Visual review still needs a real interactive Blender session.
+
 Check bonded-atom additions and bond-order edits after explicit hydrogen
 preparation and UFF minimization:
 

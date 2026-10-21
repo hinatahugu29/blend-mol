@@ -61,7 +61,10 @@ branch; both were confirmed against Open Babel 3.1.1's own C++ source
 (forcefielduff.cpp), closing the sulfoxide/sulfone torsion gap to within
 0.1 kJ/mol. Version 0.1.65 adds SDF export (a single V2000 record plus
 `$$$$`), completing the PDB/SDF export pair alongside existing MOL/XYZ
-export.
+export. Version 0.1.66 splits the single flat N-panel into seven
+collapsible, workflow-grouped sub-panels (no operator or property removed),
+emphasizes the three primary actions, and collapses the UFF energy
+breakdown and less-used sections by default.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
