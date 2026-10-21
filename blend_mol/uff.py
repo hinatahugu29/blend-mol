@@ -64,9 +64,13 @@ UFF_PARAMETERS = {
     "F_": UffParameter("F_", 0.668, 180.0, 3.364, 0.050, 1.735, 0.0, 2.0, 10.874),
     "P_3+3": UffParameter("P_3+3", 1.101, 93.8, 4.147, 0.305, 2.863, 2.4, 1.25, 5.463),
     "S_3+2": UffParameter("S_3+2", 1.064, 92.1, 4.035, 0.274, 2.703, 0.484, 1.25, 6.928),
-    "Cl": UffParameter("Cl", 1.044, 180.0, 3.947, 0.227, 2.348, 0.0, 1.25, 4.946),
-    "Br": UffParameter("Br", 1.192, 180.0, 4.189, 0.251, 2.519, 0.0, 0.70, 4.425),
-    "I_": UffParameter("I_", 1.382, 180.0, 4.500, 0.339, 2.650, 0.0, 0.20, 3.762),
+    # Xi (electronegativity) corrected from the published UFF/Open Babel
+    # table: these three previously held the Hard (QEq hardness) column
+    # value instead, silently shifting the C/N/O-X equilibrium bond length
+    # by the electronegativity correction term in _equilibrium_bond_length.
+    "Cl": UffParameter("Cl", 1.044, 180.0, 3.947, 0.227, 2.348, 0.0, 1.25, 8.564),
+    "Br": UffParameter("Br", 1.192, 180.0, 4.189, 0.251, 2.519, 0.0, 0.70, 7.790),
+    "I_": UffParameter("I_", 1.382, 180.0, 4.500, 0.339, 2.650, 0.0, 0.20, 6.822),
 }
 
 

@@ -27,7 +27,11 @@ silently overbonded by subsequent edits. Version 0.1.56 fixes the depsgraph
 comparison that silently prevented automatic Live UFF from ever starting on a
 real atom move, since every Blender depsgraph update carries an evaluated
 copy of the moved object, never the original data-block it was compared
-against.
+against. Version 0.1.57 fixes the UFF electronegativity parameter for
+chlorine, bromine, and iodine, which held the published table's hardness
+column instead, shifting equilibrium bond lengths for carbon/nitrogen/
+oxygen-halogen bonds; it is cross-checked against Open Babel 3.1.1's own
+UFF parameter table in an automated regression test.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
