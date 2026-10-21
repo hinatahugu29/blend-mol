@@ -11,8 +11,9 @@ versioned archive generated under the local `dist` directory.
 Current capabilities include starting from an empty scene, importing and
 exporting common molecular formats, atom/bond editing, SMILES stereochemistry,
 partial UFF energy and minimization, constraints, fixed atoms, and background
-Live UFF relaxation. Version 0.1.48 adds a selectable stateful FIRE2 optimizer
-while retaining steepest descent as the reference option.
+Live UFF relaxation. Version 0.1.49 adds stateful L-BFGS and makes it the
+default after direct convergence and timing comparisons with FIRE2 and the
+steepest-descent reference.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

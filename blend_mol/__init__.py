@@ -106,8 +106,9 @@ class BlendMolSettings(PropertyGroup):
         items=(
             ("STEEPEST", "Steepest Descent", "Stable reference optimizer with backtracking"),
             ("FIRE2", "FIRE2", "Stateful inertial optimizer suited to interactive relaxation"),
+            ("LBFGS", "L-BFGS", "Limited-memory quasi-Newton optimizer for final convergence"),
         ),
-        default="STEEPEST",
+        default="LBFGS",
     )
     uff_live_steps: IntProperty(name="Interactive UFF Steps", default=1, min=1, max=10)
     uff_live_target_ms: FloatProperty(

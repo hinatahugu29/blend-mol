@@ -21,6 +21,44 @@ import native_backend
 import uff
 
 class TestUffTyping(unittest.TestCase):
+    def test_lbfgs_state_continues_across_chunks(self):
+        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        first = minimize_partial_energy(molecule, 4, 0.01, algorithm="LBFGS")
+        second = minimize_partial_energy(
+            first.molecule, 4, 0.01, algorithm="LBFGS",
+            optimizer_state=first.optimizer_state,
+        )
+        whole = minimize_partial_energy(molecule, 8, 0.01, algorithm="LBFGS")
+
+        self.assertTrue(first.ready and second.ready and whole.ready)
+        self.assertEqual(first.optimizer_state.algorithm, "LBFGS")
+        self.assertLessEqual(len(first.optimizer_state.history_s), 7)
+        self.assertEqual(
+            len(first.optimizer_state.history_s), len(first.optimizer_state.history_y)
+        )
+        for chunked_atom, whole_atom in zip(second.molecule.atoms, whole.molecule.atoms):
+            for chunked_value, whole_value in zip(chunked_atom.position, whole_atom.position):
+                self.assertAlmostEqual(chunked_value, whole_value, places=9)
+        self.assertLess(second.final_energy_kcal_mol, first.initial_energy_kcal_mol)
+
+    def test_lbfgs_fixed_atom_cancellation_and_state_reset(self):
+        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        incompatible = UffOptimizerState(
+            "LBFGS", initialized=True, history_s=((1.0,),), history_y=((1.0,),)
+        )
+        result = minimize_partial_energy(
+            molecule, 5, 0.01, {0}, algorithm="LBFGS",
+            optimizer_state=incompatible,
+        )
+        self.assertTrue(result.ready)
+        self.assertEqual(result.molecule.atoms[0].position, molecule.atoms[0].position)
+        self.assertTrue(all(len(vector) == len(molecule.atoms) * 3 for vector in result.optimizer_state.history_s))
+        cancelled = minimize_partial_energy(
+            molecule, 5, 0.01, algorithm="LBFGS", cancelled=lambda: True
+        )
+        self.assertEqual(cancelled.termination, "cancelled")
+        self.assertEqual(cancelled.iterations, 0)
+
     def test_fire2_state_continues_across_chunks(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
         first = minimize_partial_energy(molecule, 5, 0.01, algorithm="FIRE2")

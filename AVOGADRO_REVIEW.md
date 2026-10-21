@@ -176,3 +176,18 @@ atoms, cancellation, state mismatch recovery, Blender 5.2.2 background use,
 and Python/Rust parity. Across three randomized ten-step fixed-atom cases, the
 largest Python/Rust difference was about `3.3e-12 kcal/mol` in energy and
 `6.1e-14 Å` in any coordinate.
+
+Blend Mol 0.1.49 adds a stateful limited-memory BFGS optimizer with seven
+curvature-history pairs, an Armijo backtracking line search, the existing
+per-atom movement cap, and fixed-atom projection. History continues across
+Live UFF chunks and is discarded when its algorithm or coordinate dimension
+does not match the current request.
+
+On three identically distorted 30-atom aromatic cases, L-BFGS reached about
+`64.496 kcal/mol` in 57–72 steps and a median 189 ms. Steepest descent remained
+near `64.535 kcal/mol` after the 100-step limit and took 1111 ms; FIRE2 took
+253 ms but two cases remained at high energy. Therefore L-BFGS becomes the
+default and an automatic FIRE/L-BFGS hybrid is deliberately deferred. This is
+a measured project decision rather than an assumption that the upstream
+hybrid is universally superior. Python/Rust L-BFGS validation remained within
+about `1.6e-10 kcal/mol` and `6.3e-12 Å`.

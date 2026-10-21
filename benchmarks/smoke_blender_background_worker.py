@@ -117,6 +117,16 @@ try:
     assert fire_first.ready and fire_second.ready
     assert fire_second.optimizer_state.initialized
     assert len(fire_second.optimizer_state.velocity) == len(molecule.atoms)
+    lbfgs_first = minimize_partial_energy(
+        molecule, 4, 0.02, prepared=prepared, algorithm="LBFGS"
+    )
+    lbfgs_second = minimize_partial_energy(
+        lbfgs_first.molecule, 4, 0.02, prepared=prepared, algorithm="LBFGS",
+        optimizer_state=lbfgs_first.optimizer_state,
+    )
+    assert lbfgs_first.ready and lbfgs_second.ready
+    assert lbfgs_second.optimizer_state.initialized
+    assert len(lbfgs_second.optimizer_state.history_s) <= 7
     worker = LatestOnlyWorker(
         lambda item: minimize_partial_energy(item, 1, 0.02, frozenset(), prepared=prepared)
     )
@@ -153,6 +163,7 @@ try:
         "energy_tolerance_ok",
         "cancellation_ok",
         "stateful_fire2_ok",
+        "stateful_lbfgs_ok",
         len(molecule.atoms),
         completion.elapsed_ms,
         completion.value.final_energy_kcal_mol,

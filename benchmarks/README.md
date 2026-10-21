@@ -45,6 +45,16 @@ This validation also compares ten stateful FIRE2 steps on Python and Rust with
 two fixed atoms. The Blender background smoke test separately continues FIRE2
 state across two chunks to cover the Live UFF execution boundary.
 
+To compare steepest descent, FIRE2, and L-BFGS on the same three distorted
+30-atom aromatic structures:
+
+```powershell
+python benchmarks\benchmark_optimizers.py
+```
+
+The output records every run plus median wall time and final energy. L-BFGS
+state continuation is also covered by the unit and Blender smoke suites.
+
 With Avogadro 2.0.0 installed in its default Windows location, compare energy
 components against its bundled Open Babel 3 UFF implementation:
 

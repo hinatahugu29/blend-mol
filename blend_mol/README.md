@@ -107,9 +107,13 @@ their atom and bond graph as a ball-and-stick model.
   Version 0.1.48 adds a selectable stateful FIRE2 optimizer. Its velocity,
   adaptive time step, and mixing state continue across Live UFF background
   chunks instead of restarting at every update. Moving the held atom resets
-  momentum, while fixed atoms remain fixed. **Steepest Descent** remains the
-  default reference option; choose **FIRE2** under **UFF Optimizer** to test
-  the new path in normal, manual, benchmark, and Live UFF operations.
+  momentum, while fixed atoms remain fixed.
+  Version 0.1.49 adds stateful **L-BFGS**, including continuation of its limited
+  curvature history across Live UFF chunks. It converged faster and more
+  reliably than both FIRE2 and steepest descent in the recorded three-case
+  aromatic benchmark, so **L-BFGS** is now the default. All three remain
+  selectable under **UFF Optimizer** for normal, manual, benchmark, and Live
+  UFF operations.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF

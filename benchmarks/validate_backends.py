@@ -107,6 +107,7 @@ def validate() -> dict:
     single_step = compare(source, range(10), 1, set())
     multi_step = compare(source, range(5), 20, {0, 7})
     fire2 = compare(source, range(3), 10, {0, 7}, "FIRE2")
+    lbfgs = compare(source, range(3), 10, {0, 7}, "LBFGS")
     repeated = repeatability(source)
     set_backend_preference("auto")
     tolerances = {"energy": 1.0e-7, "coordinate": 1.0e-8}
@@ -117,6 +118,8 @@ def validate() -> dict:
         and multi_step["maximum_coordinate_difference"] <= tolerances["coordinate"]
         and fire2["maximum_energy_difference"] <= tolerances["energy"]
         and fire2["maximum_coordinate_difference"] <= tolerances["coordinate"]
+        and lbfgs["maximum_energy_difference"] <= tolerances["energy"]
+        and lbfgs["maximum_coordinate_difference"] <= tolerances["coordinate"]
         and repeated["maximum_energy_difference"] == 0.0
         and repeated["maximum_coordinate_difference"] == 0.0
     )
@@ -127,6 +130,7 @@ def validate() -> dict:
         "single_step_randomized": single_step,
         "twenty_step_randomized_with_fixed_atoms": multi_step,
         "fire2_ten_step_randomized_with_fixed_atoms": fire2,
+        "lbfgs_ten_step_randomized_with_fixed_atoms": lbfgs,
         "rust_repeatability": repeated,
     }
 

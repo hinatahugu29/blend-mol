@@ -180,6 +180,8 @@ class UffOptimizerState:
     alpha: float = 0.25
     positive_steps: int = 0
     initialized: bool = False
+    history_s: tuple[tuple[float, ...], ...] = ()
+    history_y: tuple[tuple[float, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1383,7 +1385,7 @@ def minimize_partial_energy(
     algorithm: str = "STEEPEST",
     optimizer_state: UffOptimizerState | None = None,
 ) -> UffMinimizationResult:
-    """Minimize the implemented UFF subset with steepest descent or FIRE2.
+    """Minimize the implemented UFF subset with selectable Cartesian optimizers.
 
     Bond stretch, angle bend and van der Waals use analytic gradients. Torsion
     and inversion use forward differences, evaluated as one parallel native
@@ -1395,8 +1397,8 @@ def minimize_partial_energy(
     if not math.isfinite(energy_tolerance) or energy_tolerance <= 0.0:
         raise ValueError("energy tolerance must be positive and finite")
     algorithm = algorithm.upper()
-    if algorithm not in {"STEEPEST", "FIRE2"}:
-        raise ValueError("optimizer algorithm must be STEEPEST or FIRE2")
+    if algorithm not in {"STEEPEST", "FIRE2", "LBFGS"}:
+        raise ValueError("optimizer algorithm must be STEEPEST, FIRE2, or LBFGS")
     fixed = fixed_atoms or set()
     context = prepared or prepare_uff_context(molecule)
     if context.topology_key != _uff_topology_key(molecule):
@@ -1421,6 +1423,151 @@ def minimize_partial_energy(
     completed = 0
     finite_difference = 1e-4
     termination = "iteration limit"
+
+    if algorithm == "LBFGS":
+        atom_count = len(molecule.atoms)
+        vector_size = atom_count * 3
+        state_is_reusable = (
+            optimizer_state is not None
+            and optimizer_state.algorithm == "LBFGS"
+            and len(optimizer_state.history_s) == len(optimizer_state.history_y)
+            and all(len(vector) == vector_size for vector in optimizer_state.history_s)
+            and all(len(vector) == vector_size for vector in optimizer_state.history_y)
+        )
+        history_s = list(optimizer_state.history_s[-7:]) if state_is_reusable else []
+        history_y = list(optimizer_state.history_y[-7:]) if state_is_reusable else []
+        current_molecule = _with_positions(molecule, positions)
+        current_objective, evaluated_gradient, evaluation_messages = (
+            partial_objective_energy_gradient(
+                current_molecule, context, fixed, distance_constraints,
+                angle_constraints, dihedral_constraints, finite_difference,
+            )
+        )
+        if evaluation_messages:
+            return UffMinimizationResult(
+                None, initial.energy_kcal_mol, None, completed, "evaluation failed",
+                evaluation_messages,
+            )
+        gradient = [component for vector in evaluated_gradient for component in vector]
+        for _ in range(iterations):
+            if cancelled is not None and cancelled():
+                termination = "cancelled"
+                break
+            gradient_vectors = [gradient[index:index + 3] for index in range(0, vector_size, 3)]
+            max_gradient_component, _maximum_norm = _gradient_step_metrics(gradient_vectors, fixed)
+            if max_gradient_component < gradient_tolerance:
+                termination = "gradient tolerance"
+                break
+
+            work = gradient[:]
+            coefficients = []
+            valid_pairs = []
+            for step_vector, gradient_delta in reversed(list(zip(history_s, history_y))):
+                curvature = sum(s * y for s, y in zip(step_vector, gradient_delta))
+                if curvature <= 1e-12:
+                    continue
+                coefficient = sum(s * q for s, q in zip(step_vector, work)) / curvature
+                coefficients.append(coefficient)
+                valid_pairs.append((step_vector, gradient_delta, curvature))
+                work = [q - coefficient * y for q, y in zip(work, gradient_delta)]
+            if valid_pairs:
+                newest_s, newest_y, _curvature = valid_pairs[0]
+                yy = sum(value * value for value in newest_y)
+                scale = sum(s * y for s, y in zip(newest_s, newest_y)) / yy if yy > 0.0 else 1.0
+            else:
+                scale = 1.0
+            direction = [scale * value for value in work]
+            for coefficient, (step_vector, gradient_delta, curvature) in zip(
+                reversed(coefficients), reversed(valid_pairs)
+            ):
+                beta = sum(y * r for y, r in zip(gradient_delta, direction)) / curvature
+                direction = [r + s * (coefficient - beta) for r, s in zip(direction, step_vector)]
+            direction = [-value for value in direction]
+            directional_derivative = sum(g * d for g, d in zip(gradient, direction))
+            if not math.isfinite(directional_derivative) or directional_derivative >= 0.0:
+                direction = [-value for value in gradient]
+                directional_derivative = -sum(value * value for value in gradient)
+
+            direction_vectors = [direction[index:index + 3] for index in range(0, vector_size, 3)]
+            for atom_index in fixed:
+                if not 0 <= atom_index < atom_count:
+                    raise ValueError("fixed atom index is out of range")
+                direction_vectors[atom_index] = [0.0, 0.0, 0.0]
+            direction = [component for vector in direction_vectors for component in vector]
+            directional_derivative = sum(g * d for g, d in zip(gradient, direction))
+            _component, maximum_direction = _gradient_step_metrics(direction_vectors, fixed)
+            base_scale = min(1.0, max_step / maximum_direction) if maximum_direction > 0.0 else 1.0
+            accepted = False
+            line_scale = base_scale
+            candidate_gradient = None
+            candidate_objective = None
+            candidate_positions = None
+            for _line_iteration in range(8):
+                if cancelled is not None and cancelled():
+                    termination = "cancelled"
+                    break
+                trial = [position[:] for position in positions]
+                for atom_index in range(atom_count):
+                    if atom_index in fixed:
+                        continue
+                    for axis in range(3):
+                        trial[atom_index][axis] += line_scale * direction[atom_index * 3 + axis]
+                candidate = _with_positions(molecule, trial)
+                candidate_objective, candidate_evaluated_gradient, candidate_messages = (
+                    partial_objective_energy_gradient(
+                        candidate, context, fixed, distance_constraints,
+                        angle_constraints, dihedral_constraints, finite_difference,
+                    )
+                )
+                if candidate_messages:
+                    return UffMinimizationResult(
+                        None, initial.energy_kcal_mol, None, completed, "evaluation failed",
+                        candidate_messages,
+                    )
+                if candidate_objective <= current_objective + 1e-4 * line_scale * directional_derivative:
+                    candidate_positions = trial
+                    candidate_gradient = [
+                        component for vector in candidate_evaluated_gradient for component in vector
+                    ]
+                    accepted = True
+                    break
+                line_scale *= 0.5
+            if termination == "cancelled":
+                break
+            if not accepted:
+                termination = "line search stalled"
+                break
+            step_vector = tuple(
+                candidate_positions[index // 3][index % 3] - positions[index // 3][index % 3]
+                for index in range(vector_size)
+            )
+            gradient_delta = tuple(
+                candidate_gradient[index] - gradient[index] for index in range(vector_size)
+            )
+            if sum(s * y for s, y in zip(step_vector, gradient_delta)) > 1e-12:
+                history_s.append(step_vector)
+                history_y.append(gradient_delta)
+                history_s = history_s[-7:]
+                history_y = history_y[-7:]
+            energy_change = current_objective - candidate_objective
+            positions = candidate_positions
+            gradient = candidate_gradient
+            current_objective = candidate_objective
+            completed += 1
+            if energy_change <= energy_tolerance:
+                termination = "energy tolerance"
+                break
+
+        final_molecule = _with_positions(molecule, positions)
+        final_energy = partial_energy(final_molecule, context.typing, context)
+        state = UffOptimizerState(
+            "LBFGS", initialized=True,
+            history_s=tuple(history_s), history_y=tuple(history_y),
+        )
+        return UffMinimizationResult(
+            final_molecule, initial.energy_kcal_mol, final_energy.energy_kcal_mol,
+            completed, termination, (), state,
+        )
 
     if algorithm == "FIRE2":
         atom_count = len(molecule.atoms)
