@@ -327,9 +327,13 @@ try:
         )
         assert direct_result == {"CANCELLED"}, direct_result
 
-        mol_text = mol_path.read_text(encoding="utf-8")
         sdf_path = tmp_path / "roundtrip.sdf"
-        sdf_path.write_text(mol_text + "$$$$\n", encoding="utf-8")
+        export_sdf_result = addon.BLENDMOL_OT_export_sdf.execute(
+            type("ExportOp", (), {"filepath": str(sdf_path), "report": _noop_report})(),
+            addon.bpy.context,
+        )
+        assert export_sdf_result == {"FINISHED"}, export_sdf_result
+        assert sdf_path.read_text(encoding="utf-8").rstrip("\n").endswith("$$$$")
         import_sdf_result = addon.bpy.ops.blendmol.import_sdf(filepath=str(sdf_path))
         assert import_sdf_result == {"FINISHED"}, import_sdf_result
 

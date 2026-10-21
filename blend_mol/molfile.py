@@ -397,8 +397,8 @@ def read_sdf(path: str | Path) -> Molecule:
     return _read_v2000_lines(first_record, source.stem)
 
 
-def write_v2000(molecule: Molecule, path: str | Path) -> None:
-    """Write atoms, single/double/triple bonds, and formal charges as V2000."""
+def _render_v2000(molecule: Molecule) -> str:
+    """Build a V2000 structure block, shared by MOL and SDF writing."""
     atom_count = len(molecule.atoms)
     bond_count = len(molecule.bonds)
     if atom_count > 999 or bond_count > 999:
@@ -432,7 +432,22 @@ def write_v2000(molecule: Molecule, path: str | Path) -> None:
         group = charges[offset:offset + 8]
         lines.append(f"M  CHG{len(group):>3}" + "".join(f"{index:>4}{charge:>4}" for index, charge in group))
     lines.append("M  END")
-    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return "\n".join(lines) + "\n"
+
+
+def write_v2000(molecule: Molecule, path: str | Path) -> None:
+    """Write atoms, single/double/triple bonds, and formal charges as V2000."""
+    Path(path).write_text(_render_v2000(molecule), encoding="utf-8")
+
+
+def write_sdf(molecule: Molecule, path: str | Path) -> None:
+    """Write a single-record SD file: a V2000 block followed by ``$$$$``.
+
+    Matches what read_sdf already reads back (the first V2000 record up to
+    the ``$$$$`` delimiter); no per-atom/per-molecule SDF data tags are
+    written.
+    """
+    Path(path).write_text(_render_v2000(molecule) + "$$$$\n", encoding="utf-8")
 
 
 def write_xyz(molecule: Molecule, path: str | Path) -> None:

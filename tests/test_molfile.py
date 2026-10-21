@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "blend_mol"))
-from molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_v2000, write_xyz
+from molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_sdf, write_v2000, write_xyz
 
 
 class TestTriphenyleneMolfile(unittest.TestCase):
@@ -120,6 +120,26 @@ class TestTriphenyleneMolfile(unittest.TestCase):
             molecule = read_sdf(target)
 
         self.assertEqual(molecule.atoms[0].element, "N")
+
+    def test_writes_and_reads_back_sdf_atoms_bonds_and_charges(self):
+        molecule = Molecule(
+            "ethanol-like",
+            (
+                Atom("C", (0.0, 0.0, 0.0)),
+                Atom("C", (1.5, 0.0, 0.0)),
+                Atom("O", (2.2, 1.1, 0.0), formal_charge=-1),
+            ),
+            (Bond(0, 1, 1), Bond(1, 2, 2)),
+        )
+        with TemporaryDirectory() as temporary_directory:
+            target = Path(temporary_directory) / "roundtrip.sdf"
+            write_sdf(molecule, target)
+            contents = target.read_text(encoding="utf-8")
+            roundtripped = read_sdf(target)
+
+        self.assertTrue(contents.rstrip("\n").endswith("$$$$"))
+        self.assertEqual(roundtripped.atoms, molecule.atoms)
+        self.assertEqual(roundtripped.bonds, (Bond(0, 1, 1), Bond(1, 2, 2)))
 
     def test_reads_basic_smiles_with_branch_ring_bond_orders_and_charge(self):
         branched = read_smiles("CC(=O)O", "Acetic acid")

@@ -24,6 +24,9 @@ their atom and bond graph as a ball-and-stick model.
   so re-importing it loses bond order and formal charges, the same way any
   other PDB import already does.
 - Imports the first V2000 structure record in an SDF file.
+- Exports the selected molecule as a single-record SD file (a V2000 block
+  followed by `$$$$`), preserving bond order and formal charges the same
+  way V2000 MOL export already does.
 - Creates a basic organic molecule directly from SMILES, including common
   elements, formal charges, branches, ring closures, and single/double/triple
   bonds, plus common aromatic notation such as `c1ccccc1`. Aromatic bonds are

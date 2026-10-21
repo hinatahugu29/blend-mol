@@ -59,7 +59,9 @@ name's last character cannot distinguish P/S hybridisation from oxidation
 state, and a membership check let sp2-sp3 pairs fall into the sp3-sp3
 branch; both were confirmed against Open Babel 3.1.1's own C++ source
 (forcefielduff.cpp), closing the sulfoxide/sulfone torsion gap to within
-0.1 kJ/mol.
+0.1 kJ/mol. Version 0.1.65 adds SDF export (a single V2000 record plus
+`$$$$`), completing the PDB/SDF export pair alongside existing MOL/XYZ
+export.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

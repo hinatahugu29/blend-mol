@@ -24,7 +24,7 @@ from bpy.props import (
 from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
-from .molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_v2000, write_xyz
+from .molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_sdf, write_v2000, write_xyz
 from .uff import (
     _dihedral_angle, angle_bend_energy, bond_stretch_energy, minimize_partial_energy,
     numeric_gradient_atom_indices, out_of_plane_energy, partial_energy,
@@ -1106,6 +1106,36 @@ class BLENDMOL_OT_export_pdb(Operator):
             return {"CANCELLED"}
         root["blend_mol_data"] = _serialize_molecule(molecule)
         self.report({"INFO"}, f"Exported {len(molecule.atoms)} atoms and {len(molecule.bonds)} CONECT bonds")
+        return {"FINISHED"}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+
+class BLENDMOL_OT_export_sdf(Operator):
+    bl_idname = "blendmol.export_sdf"
+    bl_label = "Export Selected SDF"
+    bl_description = "Export the selected molecule as a single-record SD file (V2000 block + $$$$)"
+    bl_options = {"REGISTER"}
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.sdf", options={"HIDDEN"})
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        collection = _molecule_collection(root) if root else None
+        if root is None or collection is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        try:
+            molecule = _sync_atom_positions(root, collection)
+            write_sdf(molecule, self.filepath)
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Cannot export SDF: {exc}")
+            return {"CANCELLED"}
+        root["blend_mol_data"] = _serialize_molecule(molecule)
+        self.report({"INFO"}, f"Exported {len(molecule.atoms)} atoms and {len(molecule.bonds)} bonds")
         return {"FINISHED"}
 
     def invoke(self, context, event):
@@ -2542,6 +2572,7 @@ class BLENDMOL_PT_panel(Panel):
         layout.operator(BLENDMOL_OT_export_v2000.bl_idname, icon="EXPORT")
         layout.operator(BLENDMOL_OT_export_xyz.bl_idname, icon="EXPORT")
         layout.operator(BLENDMOL_OT_export_pdb.bl_idname, icon="EXPORT")
+        layout.operator(BLENDMOL_OT_export_sdf.bl_idname, icon="EXPORT")
         layout.operator(BLENDMOL_OT_export_uff_report.bl_idname, icon="FILE_TEXT")
         layout.operator(BLENDMOL_OT_rebuild_display.bl_idname, icon="FILE_REFRESH")
         root = _selected_molecule_root(context)
@@ -2920,6 +2951,7 @@ CLASSES = (
     BLENDMOL_OT_export_v2000,
     BLENDMOL_OT_export_xyz,
     BLENDMOL_OT_export_pdb,
+    BLENDMOL_OT_export_sdf,
     BLENDMOL_OT_export_uff_report,
     BLENDMOL_OT_new_molecule,
     BLENDMOL_OT_rebuild_display,
