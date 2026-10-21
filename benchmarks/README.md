@@ -119,6 +119,19 @@ python benchmarks\benchmark_optimizers.py
 The output records every run plus median wall time and final energy. L-BFGS
 state continuation is also covered by the unit and Blender smoke suites.
 
+With a standalone Open Babel 3.1.1 installed at its default Windows location,
+compare Si/B/P/S typing and energies against it directly (no Avogadro
+needed; this uses `tests/openbabel_uff_311.prm` as `BABEL_DATADIR`):
+
+```powershell
+python benchmarks\compare_openbabel_heteroatom_matrix.py
+```
+
+Bond and angle energies match to within 0.5 kJ/mol for every molecule here.
+Torsion energies through a phosphorus or sulfur single bond are not fully
+validated: a known chalcogen-torsion fix narrowed but did not close the gap
+for sulfoxide/sulfone (see ROADMAP.md's 0.1.60 entry).
+
 With Avogadro 2.0.0 installed in its default Windows location, compare energy
 components against its bundled Open Babel 3 UFF implementation:
 

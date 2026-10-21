@@ -544,6 +544,92 @@ class TestUffTyping(unittest.TestCase):
             self.assertTrue(energy.ready)
             self.assertTrue(math.isfinite(energy.energy_kcal_mol))
 
+    def test_types_hypervalent_phosphorus_sulfoxide_sulfone_silicon_boron(self):
+        # Neutral, tetravalent P=O (phosphine oxide/phosphonate-like) and
+        # neutral sulfoxide/sulfone sulfur fall back to the generic P_3+3 /
+        # S_3+2 types in Open Babel's own UFF typing too, confirmed by
+        # running Open Babel 3.1.1 (obenergy -ff UFF -v) on a neutral
+        # trimethylphosphine-oxide analogue and dimethyl sulfoxide: neither
+        # has a dedicated SMARTS rule for a neutral four-coordinate center,
+        # only for explicit +4/+5/+6 formal charges this project does not
+        # use for these groups.
+        phosphine_oxide = Molecule(
+            "R3P=O",
+            (
+                Atom("P", (0.0, 0.0, 0.0)),
+                Atom("O", (1.4, 0.3, 0.0)),
+                Atom("C", (-0.6, 1.3, 0.0)),
+                Atom("C", (-0.6, -1.3, 0.0)),
+                Atom("C", (-1.2, 0.0, 1.3)),
+            ),
+            (Bond(0, 1, 2), Bond(0, 2, 1), Bond(0, 3, 1), Bond(0, 4, 1)),
+        )
+        self.assertEqual(type_molecule(phosphine_oxide).types[0], "P_3+3")
+
+        hypervalent_phosphorus = Molecule(
+            "PCl5-like",
+            (Atom("P", (0.0, 0.0, 0.0)),) + tuple(
+                Atom("Cl", (1.5, float(index), 0.2 * index)) for index in range(5)
+            ),
+            tuple(Bond(0, index + 1, 1) for index in range(5)),
+        )
+        self.assertEqual(type_molecule(hypervalent_phosphorus).types[0], "P_3+5")
+
+        dmso = Molecule(
+            "DMSO",
+            (
+                Atom("S", (0.0, 0.0, 0.0)),
+                Atom("O", (1.4, 0.3, 0.0)),
+                Atom("C", (-0.6, 1.3, 0.0)),
+                Atom("C", (-0.6, -1.3, 0.0)),
+            ),
+            (Bond(0, 1, 2), Bond(0, 2, 1), Bond(0, 3, 1)),
+        )
+        self.assertEqual(type_molecule(dmso).types[0], "S_3+2")
+
+        sulfone = Molecule(
+            "sulfone",
+            (
+                Atom("S", (0.0, 0.0, 0.0)),
+                Atom("O", (1.4, 0.3, 0.0)),
+                Atom("O", (-1.4, 0.3, 0.0)),
+                Atom("C", (0.0, 1.3, 1.0)),
+                Atom("C", (0.0, -1.3, 1.0)),
+            ),
+            (Bond(0, 1, 2), Bond(0, 2, 2), Bond(0, 3, 1), Bond(0, 4, 1)),
+        )
+        self.assertEqual(type_molecule(sulfone).types[0], "S_3+2")
+
+        silane = Molecule(
+            "SiH4",
+            (Atom("Si", (0.0, 0.0, 0.0)),) + tuple(
+                Atom("H", (1.1, float(index), 0.3 * index)) for index in range(4)
+            ),
+            tuple(Bond(0, index + 1, 1) for index in range(4)),
+        )
+        self.assertEqual(type_molecule(silane).types[0], "Si3")
+
+        trigonal_boron = Molecule(
+            "BH3",
+            (
+                Atom("B", (0.0, 0.0, 0.0)),
+                Atom("H", (1.2, 0.0, 0.0)),
+                Atom("H", (-0.6, 1.0, 0.0)),
+                Atom("H", (-0.6, -1.0, 0.0)),
+            ),
+            (Bond(0, 1, 1), Bond(0, 2, 1), Bond(0, 3, 1)),
+        )
+        self.assertEqual(type_molecule(trigonal_boron).types[0], "B_2")
+
+        tetrahedral_borate = Molecule(
+            "BH4-",
+            (Atom("B", (0.0, 0.0, 0.0), formal_charge=-1),) + tuple(
+                Atom("H", (1.1, float(index), 0.3 * index)) for index in range(4)
+            ),
+            tuple(Bond(0, index + 1, 1) for index in range(4)),
+        )
+        self.assertEqual(type_molecule(tetrahedral_borate).types[0], "B_3")
+
     def test_types_and_evaluates_explicit_monovalent_halogens(self):
         for element, expected_type in (("Cl", "Cl"), ("Br", "Br"), ("I", "I_")):
             molecule = Molecule(

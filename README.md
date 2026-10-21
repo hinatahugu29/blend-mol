@@ -41,6 +41,11 @@ linear (sp) atom with a further substituent, including plain nitriles like
 acetonitrile: the analytic angle gradient treated the 0/0 limit at an sp
 center's own 180° equilibrium as a real degeneracy, and torsions were
 defined through sp centers even though no torsional barrier exists there.
+Version 0.1.60 adds silicon, boron, and hypervalent phosphorus UFF typing,
+and widens neutral tetravalent P=O and sulfoxide/sulfone typing to match
+Open Babel's own fallback behavior (confirmed against a standalone Open
+Babel 3.1.1 install); it also fixes sulfur's torsion treatment missing the
+same Group 6 special case oxygen already had.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

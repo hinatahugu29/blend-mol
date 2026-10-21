@@ -63,7 +63,11 @@ UFF_PARAMETERS = {
     "O_R": UffParameter("O_R", 0.680, 110.0, 3.500, 0.060, 2.300, 0.0, 2.0, 8.741),
     "F_": UffParameter("F_", 0.668, 180.0, 3.364, 0.050, 1.735, 0.0, 2.0, 10.874),
     "P_3+3": UffParameter("P_3+3", 1.101, 93.8, 4.147, 0.305, 2.863, 2.4, 1.25, 5.463),
+    "P_3+5": UffParameter("P_3+5", 1.056, 109.47, 4.147, 0.305, 2.863, 2.4, 1.25, 5.463),
     "S_3+2": UffParameter("S_3+2", 1.064, 92.1, 4.035, 0.274, 2.703, 0.484, 1.25, 6.928),
+    "Si3": UffParameter("Si3", 1.117, 109.47, 4.295, 0.402, 2.323, 1.225, 1.25, 4.168),
+    "B_2": UffParameter("B_2", 0.828, 120.0, 4.083, 0.18, 1.755, 0.0, 2.0, 5.11),
+    "B_3": UffParameter("B_3", 0.838, 109.47, 4.083, 0.18, 1.755, 0.0, 2.0, 5.11),
     # Xi (electronegativity) corrected from the published UFF/Open Babel
     # table: these three previously held the Hard (QEq hardness) column
     # value instead, silently shifting the C/N/O-X equilibrium bond length
@@ -260,10 +264,41 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
             atom_type = _type_from_bond_orders("O", bond_orders)
         elif atom.element == "F" and atom.formal_charge == 0 and degree <= 1:
             atom_type = "F_"
-        elif atom.element == "P" and atom.formal_charge == 0 and degree <= 3 and max_order == 1:
+        elif atom.element == "P" and atom.formal_charge == 0 and degree == 5 and max_order == 1:
+            # Hypervalent P (PCl5/PF5-like); Open Babel's own SMARTS rule for
+            # this ([#15D5]) keys only on having five single-bonded neighbors.
+            atom_type = "P_3+5"
+        elif atom.element == "P" and atom.formal_charge == 0 and (
+            (degree <= 3 and max_order == 1) or (degree == 4 and max_order == 2)
+        ):
+            # Open Babel's UFF typing has no dedicated phosphate/phosphonate
+            # rule for a neutral, tetravalent P=O center (its SMARTS P_3+5
+            # rule requires five single-bonded neighbors, not four with one
+            # double bond); it falls back to generic P_3+3 for that shape,
+            # confirmed by running Open Babel 3.1.1 on a neutral R3P=O
+            # structure. Matching that fallback keeps this typing consistent
+            # with the same reference this project validates energies
+            # against, rather than inventing an unvalidated phosphonate type.
             atom_type = "P_3+3"
-        elif atom.element == "S" and atom.formal_charge == 0 and degree <= 2 and max_order == 1:
+        elif atom.element == "S" and atom.formal_charge == 0 and (
+            (degree <= 2 and max_order == 1) or (degree in (3, 4) and max_order == 2)
+        ):
+            # Likewise, Open Babel's S_3+4/S_3+6 rules key on explicit +4/+6
+            # formal charges (common for SO2/SO3 drawn with charge-separated
+            # Lewis structures), not on a neutral sulfoxide/sulfone's double
+            # bonds; confirmed it falls back to generic S_3+2 for neutral
+            # dimethyl sulfoxide (one S=O, degree 3).
             atom_type = "S_3+2"
+        elif atom.element == "Si" and atom.formal_charge == 0 and degree <= 4 and max_order == 1:
+            # UFF has only one silicon type; a multiply-bonded Si (silene,
+            # silyne) has no correct type available and is left unsupported.
+            atom_type = "Si3"
+        elif atom.element == "B" and -1 <= atom.formal_charge <= 0 and max_order == 1 and degree <= 3:
+            atom_type = "B_2"
+        elif atom.element == "B" and -1 <= atom.formal_charge <= 0 and max_order == 1 and degree == 4:
+            # Tetracoordinate boron is almost always anionic (BF4-,
+            # borohydrides); formal_charge is not restricted to 0 here.
+            atom_type = "B_3"
         elif atom.element in {"Cl", "Br"} and atom.formal_charge == 0 and degree <= 1:
             atom_type = atom.element
         elif atom.element == "I" and atom.formal_charge == 0 and degree <= 1:
@@ -548,9 +583,13 @@ def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int,
         ideal = math.radians(60.0)
         first_barrier = first.torsion_barrier
         second_barrier = second.torsion_barrier
-        if first.name.startswith("O_"):
+        # UFF's special sp3-sp3 torsion case for a Group 6 atom (O or S)
+        # applies to both chalcogens, not just oxygen; S_3+2's "+2" suffix
+        # is an oxidation-state marker, not a hybridisation code, so it must
+        # be matched by element prefix here rather than by that suffix.
+        if first.name.startswith(("O_", "S_")):
             periodicity, ideal, first_barrier = 2, math.radians(90.0), 2.0
-        if second.name.startswith("O_"):
+        if second.name.startswith(("O_", "S_")):
             periodicity, ideal, second_barrier = 2, math.radians(90.0), 2.0
         return periodicity, math.cos(periodicity * ideal), 0.5 * math.sqrt(first_barrier * second_barrier)
     if first_coordination == "R" and second_coordination == "R":
