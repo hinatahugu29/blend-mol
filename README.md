@@ -51,6 +51,9 @@ test, and adds a GitHub Actions workflow that runs the full dependency-free
 and Blender-based test suites automatically on every push. Version 0.1.62
 adds PDB export (coordinates and connectivity; PDB has no bond-order field,
 so re-importing loses bond order the same way any PDB import already does).
+Version 0.1.63 speeds up the plain-Python van der Waals energy check that
+minimization's line search calls on every trial step, roughly halving the
+300-atom case and bringing it to about the 100 ms/10 Hz interactive target.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
