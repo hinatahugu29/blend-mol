@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Event
 from time import perf_counter
 import bpy
+from bpy.app.handlers import persistent
 from bpy.props import (
     BoolProperty,
     CollectionProperty,
@@ -116,6 +117,11 @@ class BlendMolSettings(PropertyGroup):
         description="Target milliseconds per background UFF update; step count adapts automatically",
     )
     uff_live_interval: FloatProperty(name="Live Update Interval", default=0.08, min=0.03, max=1.0)
+    uff_live_auto_start: BoolProperty(
+        name="Start Live UFF When Moving an Atom",
+        default=False,
+        description="Automatically relax surrounding atoms after moving one explicit atom; stops after settling",
+    )
     uff_live_settle_updates: IntProperty(
         name="Maximum Settle Updates", default=25, min=1, max=500,
         description="Maximum background updates after each atom movement",
@@ -1723,6 +1729,50 @@ class BLENDMOL_OT_benchmark_uff_step(Operator):
 
 
 _LIVE_UFF_OPERATOR = None
+_AUTO_LIVE_UFF_TIMER_PENDING = False
+
+
+def _start_auto_live_uff() -> None:
+    """Start Live UFF outside the depsgraph callback after an atom transform."""
+    global _AUTO_LIVE_UFF_TIMER_PENDING
+    _AUTO_LIVE_UFF_TIMER_PENDING = False
+    if _LIVE_UFF_OPERATOR is not None:
+        return None
+    context = bpy.context
+    scene = getattr(context, "scene", None)
+    if scene is None or not scene.blend_mol_settings.uff_live_auto_start:
+        return None
+    selected = _selected_explicit_atom(context)
+    if selected is None:
+        return None
+    try:
+        bpy.ops.blendmol.toggle_live_uff(
+            "INVOKE_DEFAULT", start_immediately=True, auto_stop_when_ready=True,
+        )
+    except RuntimeError:
+        # Blender can legitimately have no suitable window context while loading
+        # a file or changing workspaces. The next transform queues a fresh start.
+        pass
+    return None
+
+
+@persistent
+def _queue_auto_live_uff_from_transform(scene, depsgraph) -> None:
+    """Defer automatic Live UFF startup until Blender finishes a transform update."""
+    global _AUTO_LIVE_UFF_TIMER_PENDING
+    if _LIVE_UFF_OPERATOR is not None or _AUTO_LIVE_UFF_TIMER_PENDING:
+        return
+    settings = getattr(scene, "blend_mol_settings", None)
+    if settings is None or not settings.uff_live_auto_start:
+        return
+    active = bpy.context.view_layer.objects.active if bpy.context.view_layer else None
+    if active is None or active.get("blend_mol_kind") != "atom" or active.get("blend_mol_implicit"):
+        return
+    for update in depsgraph.updates:
+        if update.id == active and update.is_updated_transform:
+            _AUTO_LIVE_UFF_TIMER_PENDING = True
+            bpy.app.timers.register(_start_auto_live_uff, first_interval=0.0)
+            return
 
 
 class BLENDMOL_OT_toggle_live_uff(Operator):
@@ -1745,6 +1795,9 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
     _cancel_event = None
     _adaptive_steps = 1
     _optimizer_state = None
+
+    start_immediately: BoolProperty(options={"HIDDEN"}, default=False)
+    auto_stop_when_ready: BoolProperty(options={"HIDDEN"}, default=False)
 
     def _submit(self, molecule, root, settings, phase="calculating"):
         if self._cancel_event is not None:
@@ -1808,7 +1861,10 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         root, _collection, atom_index = selected
         self._root_name = root.name
         self._atom_index = atom_index
-        self._last_position = tuple(context.active_object.matrix_local.translation)
+        self._last_position = (
+            None if self.start_immediately
+            else tuple(context.active_object.matrix_local.translation)
+        )
         self._stop_requested = False
         try:
             molecule = _deserialize_molecule(root["blend_mol_data"])
@@ -1938,6 +1994,8 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                 self._submit(result.molecule, root, settings, "settling")
             else:
                 root["blend_mol_live_uff_phase"] = "ready"
+                if self.auto_stop_when_ready:
+                    return self._finish(context)
         except (ArithmeticError, KeyError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
             root["blend_mol_live_uff_error"] = str(exc)
         return {"PASS_THROUGH"}
@@ -2565,13 +2623,14 @@ class BLENDMOL_PT_panel(Panel):
                     )
                     uff_box.operator(BLENDMOL_OT_minimize_partial_uff.bl_idname, icon="MOD_SMOOTH")
                     live_box = uff_box.box()
-                    live_box.label(text="Interactive stepping prototype")
+                    live_box.label(text="Interactive UFF relaxation")
                     live_box.label(text="Move one atom, select it, then relax surroundings")
                     live_box.prop(settings, "uff_live_steps")
                     live_box.prop(settings, "uff_live_target_ms")
                     live_box.prop(settings, "uff_live_settle_updates")
                     live_box.operator(BLENDMOL_OT_relax_around_selected_atom.bl_idname, icon="TRACKING")
                     live_box.prop(settings, "uff_live_interval")
+                    live_box.prop(settings, "uff_live_auto_start")
                     live_running = bool(
                         _LIVE_UFF_OPERATOR is not None
                         and _LIVE_UFF_OPERATOR._root_name == root.name
@@ -2745,12 +2804,19 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.blend_mol_settings = PointerProperty(type=BlendMolSettings)
+    if _queue_auto_live_uff_from_transform not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_queue_auto_live_uff_from_transform)
 
 
 def unregister():
-    global _LIVE_UFF_OPERATOR
+    global _AUTO_LIVE_UFF_TIMER_PENDING, _LIVE_UFF_OPERATOR
     if _LIVE_UFF_OPERATOR is not None:
         _LIVE_UFF_OPERATOR._finish(bpy.context)
+    if _queue_auto_live_uff_from_transform in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_queue_auto_live_uff_from_transform)
+    if bpy.app.timers.is_registered(_start_auto_live_uff):
+        bpy.app.timers.unregister(_start_auto_live_uff)
+    _AUTO_LIVE_UFF_TIMER_PENDING = False
     del bpy.types.Scene.blend_mol_settings
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

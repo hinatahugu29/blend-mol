@@ -120,6 +120,9 @@ their atom and bond graph as a ball-and-stick model.
   Version 0.1.51 restores the `native` directory in the distribution ZIP so
   the Windows Rust DLL is found after Blender installation. The loader also
   accepts the accidentally flattened DLL location used by 0.1.49 and 0.1.50.
+  Version 0.1.52 adds an opt-in **Start Live UFF When Moving an Atom** switch.
+  It detects a transform of the active explicit atom, begins a background Live
+  UFF relaxation, and stops after the configured settling sequence completes.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF
@@ -133,8 +136,9 @@ their atom and bond graph as a ball-and-stick model.
   temporarily while a configurable small number of partial UFF steps relaxes
   the surrounding atoms. Explicit atom and bond objects are updated in place,
   preserving mesh identity and selection instead of rebuilding the display.
-  An experimental timer-driven Live UFF mode watches the selected atom and
-  relaxes its surroundings only when that atom moves; its update interval is configurable.
+  A timer-driven Live UFF mode watches the selected atom and relaxes its
+  surroundings only when that atom moves; its update interval is configurable.
+  Its optional automatic mode starts on an atom move and stops after settling.
   Version 0.1.32 runs this calculation on a dedicated background worker. Drag
   updates replace any pending older request, and generation numbers prevent a
   stale result from overwriting newer coordinates. Blender objects remain
