@@ -1,5 +1,18 @@
 # Blend Mol UFF benchmarks
 
+Validate the release ZIP with Steam Blender's own Python, without installing
+the extension or changing preferences:
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\validate_distribution.py -- dist\blend_mol-0.1.52.zip
+```
+
+This checks the packaged DLL path, an actual native kernel evaluation against
+its reference formula, explicit Python bypass, Auto fallback for a missing DLL,
+and the forced-Rust error. It uses a temporary extraction directory and releases
+the Windows DLL before cleanup. This gate targets Windows AMD64; it does not
+establish compatibility with other CPUs or Blender versions.
+
 Run from the repository root:
 
 ```powershell
