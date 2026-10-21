@@ -23,6 +23,25 @@ from blend_mol.uff import (
 
 addon.register()
 try:
+    stopped_operator = type("StoppedLiveUffOperator", (), {})()
+    stopped_operator._timer = None
+    stopped_operator._worker = None
+    stopped_operator._cancel_event = None
+    stopped_operator._root_name = ""
+    stopped_operator._stop_requested = False
+    stopped_operator._prepared_uff = None
+    stopped_operator._optimizer_state = None
+    stopped_operator._applied_results = 0
+    stopped_operator._initial_positions = None
+    stopped_operator._finish = lambda context: addon.BLENDMOL_OT_toggle_live_uff._finish(
+        stopped_operator, context
+    )
+    assert stopped_operator._finish(addon.bpy.context) == {"CANCELLED"}
+    assert stopped_operator._stop_requested
+    late_timer = type("LateTimerEvent", (), {"type": "TIMER"})()
+    assert addon.BLENDMOL_OT_toggle_live_uff.modal(
+        stopped_operator, addon.bpy.context, late_timer
+    ) == {"CANCELLED"}
     molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
     root = addon._create_molecule(molecule, addon.bpy.context.scene.blend_mol_settings, "smoke")
     original_revision = addon._molecule_revision(root)
@@ -164,6 +183,7 @@ try:
         "cancellation_ok",
         "stateful_fire2_ok",
         "stateful_lbfgs_ok",
+        "late_stop_timer_safe",
         len(molecule.atoms),
         completion.elapsed_ms,
         completion.value.final_energy_kcal_mol,

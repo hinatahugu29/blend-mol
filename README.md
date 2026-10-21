@@ -13,7 +13,8 @@ exporting common molecular formats, atom/bond editing, SMILES stereochemistry,
 partial UFF energy and minimization, constraints, fixed atoms, and background
 Live UFF relaxation. Version 0.1.49 adds stateful L-BFGS and makes it the
 default after direct convergence and timing comparisons with FIRE2 and the
-steepest-descent reference.
+steepest-descent reference. Version 0.1.50 fixes safe handling of a late timer
+event immediately after Live UFF is stopped.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

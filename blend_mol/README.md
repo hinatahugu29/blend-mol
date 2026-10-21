@@ -114,6 +114,9 @@ their atom and bond graph as a ball-and-stick model.
   aromatic benchmark, so **L-BFGS** is now the default. All three remain
   selectable under **UFF Optimizer** for normal, manual, benchmark, and Live
   UFF operations.
+  Version 0.1.50 fixes a Live UFF shutdown race: a timer event already queued
+  when the user stops the tool now exits safely instead of accessing the
+  worker after it has been released.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF

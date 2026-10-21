@@ -1769,6 +1769,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
 
     def _finish(self, context):
         global _LIVE_UFF_OPERATOR
+        self._stop_requested = True
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
             self._timer = None
@@ -1848,6 +1849,8 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
             return self._finish(context)
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
+        if self._worker is None:
+            return self._finish(context)
         root = bpy.data.objects.get(self._root_name)
         collection = _molecule_collection(root) if root else None
         if root is None or collection is None:
