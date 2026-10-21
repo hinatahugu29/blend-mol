@@ -107,6 +107,8 @@ UFF は Blend Mol 内へ実装し、Open Babel の導入を必須にしない。
     できることを確認。続けて、修正前は到達不能だった「本物のdepsgraph起動を
     途中でEscapeキャンセルする」経路も再現し、ドラッグ前座標への復元と、
     直前に完了済みの別ジェスチャーのbefore/afterスナップショットを上書きしない
+    ことを確認した。さらに、1回のドラッグ中に複数回のTIMERイベントをまたいで
+    位置が動く場合でも、depsgraphガードが二重に自動起動セッションを生成しない
     ことを確認した。実画面のCtrl+Z/Ctrl+Shift+Zは`bpy.ops.ed.undo`/`redo`が
     背景モードではウィンドウ/エリア文脈がなく`poll()`で必ず拒否されるため
     ヘッドレスでは検証不能と判明（`benchmarks/smoke_blender_live_uff_gesture.py`）。

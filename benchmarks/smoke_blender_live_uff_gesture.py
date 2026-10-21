@@ -183,6 +183,47 @@ try:
     assert json.loads(root["blend_mol_uff_before_positions"]) == before_2
     assert json.loads(root["blend_mol_uff_after_positions"]) == after_2
 
+    # --- Gesture 4: several in-flight position updates within one drag -----
+    # A real mouse drag reports many intermediate positions while the modal
+    # operator is already running. Only the final position at auto-stop time
+    # must be reflected; the depsgraph guard must not spawn extra sessions.
+    multi_step_start = tuple(addon._deserialize_molecule(root["blend_mol_data"]).atoms[0].position)
+    multi_step_atom_object = next(
+        obj for obj in collection.objects
+        if obj.get("blend_mol_kind") == "atom"
+        and not obj.get("blend_mol_implicit")
+        and obj.get("blend_mol_atom_index") == 0
+    )
+    for obj in addon.bpy.context.selected_objects:
+        obj.select_set(False)
+    multi_step_atom_object.select_set(True)
+    addon.bpy.context.view_layer.objects.active = multi_step_atom_object
+    multi_step_atom_object.location.x += 0.05
+    trigger_real_auto_start(multi_step_atom_object)
+    operator = addon._LIVE_UFF_OPERATOR
+    assert operator is not None
+    timer_event = type("TimerEvent", (), {"type": "TIMER"})()
+    # One tick submits the first position; nudge further while it is running.
+    addon.BLENDMOL_OT_toggle_live_uff.modal(operator, addon.bpy.context, timer_event)
+    assert not addon._AUTO_LIVE_UFF_TIMER_PENDING, (
+        "the depsgraph guard must not arm a second auto-start while one gesture runs"
+    )
+    multi_step_atom_object.location.x += 0.05
+    addon.bpy.context.view_layer.update()
+    assert not addon._AUTO_LIVE_UFF_TIMER_PENDING, (
+        "moving the held atom again mid-gesture must not spawn a second session"
+    )
+    final_multi_step_target = tuple(multi_step_atom_object.matrix_local.translation)
+    drive_gesture_to_completion()
+    multi_step_final = addon._deserialize_molecule(root["blend_mol_data"]).atoms[0].position
+    assert math.dist(multi_step_final, multi_step_start) > 1e-3, (
+        "the multi-step gesture must still have moved the held atom overall"
+    )
+    held_atom_only_moved_by_user = math.dist(
+        tuple(final_multi_step_target), multi_step_start
+    )
+    assert held_atom_only_moved_by_user > 0.05, "sanity: the user-driven displacement must be real"
+
     # --- Documented automation boundary: real WM undo/redo need a window --
     undo_blocked = False
     try:
@@ -202,6 +243,7 @@ try:
         "per_gesture_snapshot_granularity_ok",
         "restore_before_after_granularity_ok",
         "real_auto_start_escape_cancel_ok",
+        "mid_gesture_multi_step_no_duplicate_session_ok",
         "background_undo_redo_poll_boundary_confirmed",
         session_1["applied_updates"],
         session_2["applied_updates"],

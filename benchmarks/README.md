@@ -44,7 +44,9 @@ This also confirms `restore_uff_coordinates` undoes exactly one completed
 gesture at a time (its "before" snapshot is overwritten by each new gesture,
 never accumulated), exercises a real auto-started gesture cancelled mid-flight
 with Escape (restoring pre-drag coordinates without disturbing the previous
-completed gesture's snapshot), and documents that real Blender Undo/Redo
+completed gesture's snapshot), confirms several in-flight position updates
+within one drag never spawn a second auto-start session, and documents that
+real Blender Undo/Redo
 (`bpy.ops.ed.undo` / `redo`) cannot be driven from a background script: both
 operators fail `poll()` without an interactive window/area context, so a
 multi-drag Ctrl+Z/Ctrl+Shift+Z round-trip still needs manual verification in
