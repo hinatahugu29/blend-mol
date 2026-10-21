@@ -535,6 +535,14 @@ def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int,
 
     first_coordination = first.name[-1]
     second_coordination = second.name[-1]
+    if "1" in {first_coordination, second_coordination}:
+        # A linear (sp) atom provides no stable reference plane for a
+        # dihedral through it: rotating the rest of the molecule around its
+        # own bond axis is a symmetry of that atom, not a torsion with a
+        # barrier. Excluding it here (rather than only catching the
+        # resulting degenerate-angle error later) matches how real UFF
+        # implementations define torsions only between non-linear centers.
+        return None
     if "3" in {first_coordination, second_coordination}:
         periodicity = 3
         ideal = math.radians(60.0)
@@ -1018,7 +1026,15 @@ def _angle_energy_gradient(
                 )
                 observed = math.acos(max(-1.0, min(1.0, cosine)))
                 sine_observed = math.sin(observed)
-                if abs(sine_observed) < 1e-8:
+                # A linear (sp) center's energy is K*(1 + cos(theta)), whose
+                # theta-derivative -K*sin(theta) is proportional to
+                # sin(theta) itself. The ratio the chain rule needs below is
+                # therefore exactly -K everywhere, including at this center's
+                # own 180 degree equilibrium where sin(theta) underflows to
+                # 0 — a removable singularity, not a genuinely degenerate
+                # geometry, so it must not raise like a true collinear error.
+                is_linear_center = center_type[-1] == "1" or len(attached) == 1
+                if abs(sine_observed) < 1e-8 and not is_linear_center:
                     return None, gradient, ("UFF: collinear atoms have no stable angle gradient",)
                 force_constant = _angle_force_constant(
                     first_parameter, center_parameter, second_parameter, first_order, second_order
@@ -1030,15 +1046,18 @@ def _angle_energy_gradient(
                 energy_derivative = _uff_angle_derivative(
                     force_constant, observed, ideal, center_type, len(attached)
                 )
+                derivative_over_sine = (
+                    -force_constant if is_linear_center else energy_derivative / sine_observed
+                )
                 first_gradient = [
-                    energy_derivative / sine_observed * (
+                    derivative_over_sine * (
                         cosine * first_vector[axis] / first_length ** 2
                         - second_vector[axis] / (first_length * second_length)
                     )
                     for axis in range(3)
                 ]
                 second_gradient = [
-                    energy_derivative / sine_observed * (
+                    derivative_over_sine * (
                         cosine * second_vector[axis] / second_length ** 2
                         - first_vector[axis] / (first_length * second_length)
                     )

@@ -624,6 +624,61 @@ class TestUffTyping(unittest.TestCase):
         )
         self.assertEqual(type_molecule(formaldehyde).types[0], "C_R")
 
+    def test_linear_sp_atom_with_further_substituents_minimizes(self):
+        # Any linear (sp, coordination "1") center with a substituent beyond
+        # its own two bonded atoms exposes a removable 1/sin(theta)
+        # singularity in the analytic angle gradient at exactly its own 180
+        # degree equilibrium, and a mathematically undefined torsion/dihedral
+        # through its own axis. Before this fix both aborted minimization
+        # with a "collinear" error for any such molecule, including a plain
+        # nitrile like acetonitrile, not just the cumulated-bond systems
+        # above (acetonitrile's sp carbon comes from an ordinary triple
+        # bond, already part of the supported organic subset).
+        acetonitrile = Molecule(
+            "acetonitrile",
+            (
+                Atom("C", (0.0, 0.0, 0.0)),
+                Atom("N", (1.16, 0.0, 0.0)),
+                Atom("C", (-1.47, 0.0, 0.0)),
+                Atom("H", (-1.84, 1.02, 0.0)),
+                Atom("H", (-1.84, -0.51, 0.88)),
+                Atom("H", (-1.84, -0.51, -0.88)),
+            ),
+            (Bond(0, 1, 3), Bond(0, 2, 1), Bond(2, 3, 1), Bond(2, 4, 1), Bond(2, 5, 1)),
+        )
+        self.assertEqual(type_molecule(acetonitrile).types[0], "C_1")
+        result = minimize_partial_energy(acetonitrile, 80, 0.05, frozenset())
+        self.assertTrue(result.ready, result.messages)
+
+        # The gradient must agree with a finite-difference check even when
+        # the starting geometry sits exactly at the singular 180 degree
+        # point, not just somewhere nearby.
+        analytic_energy, analytic_gradient, messages = _angle_energy_gradient(acetonitrile)
+        self.assertEqual(messages, ())
+        epsilon = 1e-5
+        for atom_index in range(len(acetonitrile.atoms)):
+            for axis in range(3):
+                atoms = list(acetonitrile.atoms)
+                position = list(atoms[atom_index].position)
+                position[axis] += epsilon
+                atoms[atom_index] = Atom(
+                    atoms[atom_index].element, tuple(position), atoms[atom_index].formal_charge,
+                    atoms[atom_index].chirality,
+                )
+                perturbed = Molecule(acetonitrile.name, tuple(atoms), acetonitrile.bonds)
+                plus_energy = angle_bend_energy(perturbed).energy_kcal_mol
+                position[axis] -= 2 * epsilon
+                atoms[atom_index] = Atom(
+                    atoms[atom_index].element, tuple(position), atoms[atom_index].formal_charge,
+                    atoms[atom_index].chirality,
+                )
+                perturbed = Molecule(acetonitrile.name, tuple(atoms), acetonitrile.bonds)
+                minus_energy = angle_bend_energy(perturbed).energy_kcal_mol
+                finite_difference = (plus_energy - minus_energy) / (2 * epsilon)
+                self.assertAlmostEqual(
+                    analytic_gradient[atom_index][axis], finite_difference, places=2,
+                )
+
     def test_types_triphenylene_without_external_dependencies(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
 

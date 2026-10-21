@@ -36,6 +36,11 @@ atom typing for cumulated double-bond systems (CO2, ketenes, allenes,
 isocyanates): the central carbon/nitrogen previously typed sp2 from its
 highest bond order alone, bending to about 120° instead of the correct
 180° linear sp geometry, which a user noticed in a live UFF minimization.
+Version 0.1.59 fixes minimization aborting with a "collinear" error for any
+linear (sp) atom with a further substituent, including plain nitriles like
+acetonitrile: the analytic angle gradient treated the 0/0 limit at an sp
+center's own 180° equilibrium as a real degeneracy, and torsions were
+defined through sp centers even though no torsional barrier exists there.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
