@@ -10,7 +10,7 @@ from molfile import Atom, Bond, Molecule, read_v2000
 from uff import (
     _angle_constraint_energy_gradient, _angle_energy_gradient, _bond_vdw_energy_gradient,
     _dihedral_angle, _dihedral_constraint_energy_gradient, _distance_constraint_energy_gradient,
-    _gradient_step_metrics, _wrapped_angle_difference,
+    _gradient_step_metrics, _wrapped_angle_difference, _torsion_parameters,
     _uff_angle_derivative, _uff_angle_energy,
     angle_bend_energy, bond_stretch_energy, minimize_partial_energy,
     out_of_plane_energy, partial_energy, partial_objective_energy_gradient,
@@ -578,6 +578,42 @@ class TestUffTyping(unittest.TestCase):
             self.assertEqual(typing.types[0], expected_type)
             self.assertTrue(energy.ready)
             self.assertTrue(math.isfinite(energy.energy_kcal_mol))
+
+    def test_torsion_parameters_dispatch_matches_openbabel_source(self):
+        # Regression guard for two related bugs found while extending P/S/Si/B
+        # typing: (1) deriving hybridisation from a type name's last
+        # character breaks for P/S, whose "+N" suffix (P_3+3, S_3+2) marks
+        # oxidation state, not hybridisation, so S_3+2 was read as sp2; (2)
+        # the sp3-sp3 dispatch branch used "any coordination is '3'"
+        # (membership), which also (wrongly) swallowed every sp2-sp3 pair,
+        # since an sp3 partner's "3" is always present in that set. Verified
+        # against Open Babel 3.1.1's OBForceFieldUFF::SetupCalculations
+        # (forcefielduff.cpp): the Group 6 sp3-sp3 exception uses barrier
+        # 2.0 kcal/mol for O but a distinct 6.8 for S, and sp2-sp3 pairs
+        # keep periodicity 6 / barrier 0.5 unless one side is a Group 6 sp3
+        # atom, in which case only the periodicity/phase (not the barrier)
+        # changes to 2/90 degrees.
+        s = uff.UFF_PARAMETERS["S_3+2"]
+        o3 = uff.UFF_PARAMETERS["O_3"]
+        c3 = uff.UFF_PARAMETERS["C_3"]
+        c2 = uff.UFF_PARAMETERS["C_2"]
+
+        periodicity, cos_n_phi0, barrier = _torsion_parameters(s, c3)
+        self.assertEqual(periodicity, 2)
+        self.assertAlmostEqual(cos_n_phi0, -1.0)
+        self.assertAlmostEqual(barrier, 0.5 * math.sqrt(6.8 * c3.torsion_barrier))
+
+        _, _, oxygen_barrier = _torsion_parameters(o3, c3)
+        self.assertAlmostEqual(oxygen_barrier, 0.5 * math.sqrt(2.0 * c3.torsion_barrier))
+
+        periodicity, _, barrier = _torsion_parameters(c2, c3)
+        self.assertEqual(periodicity, 6)
+        self.assertAlmostEqual(barrier, 0.5)
+
+        periodicity, cos_n_phi0, barrier = _torsion_parameters(s, c2)
+        self.assertEqual(periodicity, 2)
+        self.assertAlmostEqual(cos_n_phi0, math.cos(2 * math.radians(90.0)))
+        self.assertAlmostEqual(barrier, 0.5)
 
     def test_types_hypervalent_phosphorus_sulfoxide_sulfone_silicon_boron(self):
         # Neutral, tetravalent P=O (phosphine oxide/phosphonate-like) and

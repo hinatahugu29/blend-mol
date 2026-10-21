@@ -139,10 +139,14 @@ needed; this uses `tests/openbabel_uff_311.prm` as `BABEL_DATADIR`):
 python benchmarks\compare_openbabel_heteroatom_matrix.py
 ```
 
-Bond and angle energies match to within 0.5 kJ/mol for every molecule here.
-Torsion energies through a phosphorus or sulfur single bond are not fully
-validated: a known chalcogen-torsion fix narrowed but did not close the gap
-for sulfoxide/sulfone (see ROADMAP.md's 0.1.60 entry).
+Bond, angle, and torsion energies all match to within 0.5 kJ/mol for every
+molecule here (torsion within 0.1 kJ/mol), after fixing two dispatch bugs
+in `_torsion_parameters` found by reading Open Babel 3.1.1's own
+`forcefielduff.cpp` directly (see ROADMAP.md's 0.1.63 entry). The
+synthetic phosphine-oxide/DMSO geometries are hand-placed and not energy
+minimized, so their van der Waals totals disagree sharply (steric clashes
+dominate the r^-12 term); that is a benchmark geometry artifact, not a
+code issue -- bond/angle/torsion are the meaningful comparison here.
 
 With Avogadro 2.0.0 installed in its default Windows location, compare energy
 components against its bundled Open Babel 3 UFF implementation:

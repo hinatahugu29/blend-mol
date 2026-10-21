@@ -77,6 +77,25 @@ UFF_PARAMETERS = {
     "I_": UffParameter("I_", 1.382, 180.0, 4.500, 0.339, 2.650, 0.0, 0.20, 6.822),
 }
 
+# Torsion-relevant hybridisation per atom type ("1" linear, "2"/"R" sp2 or
+# resonant -- Open Babel's own ipar[0] field treats both the same for
+# torsion dispatch, "3" sp3). This cannot be derived from the type name's
+# last character for P/S: their "+N" suffix (P_3+3, P_3+5, S_3+2) marks
+# oxidation state, not hybridisation, and happens to collide with the
+# sp2/sp3 digits used by every other element's naming convention.
+_TORSION_COORDINATION: dict[str, str] = {
+    "H_": "1", "H_b": "1",
+    "C_3": "3", "C_2": "2", "C_1": "1", "C_R": "R",
+    "N_3": "3", "N_2": "2", "N_1": "1", "N_R": "R",
+    "O_3": "3", "O_2": "2", "O_1": "1", "O_R": "R",
+    "F_": "1",
+    "P_3+3": "3", "P_3+5": "3",
+    "S_3+2": "3",
+    "Si3": "3",
+    "B_2": "2", "B_3": "3",
+    "Cl": "1", "Br": "1", "I_": "1",
+}
+
 
 @dataclass(frozen=True)
 class UffTypingReport:
@@ -565,11 +584,37 @@ def _dihedral_angle(first, second, third, fourth) -> float | None:
     return math.atan2(sine, max(-1.0, min(1.0, cosine)))
 
 
-def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int, float, float] | None:
-    """Return periodicity, cos(n*phi0), and UFF torsional barrier."""
+def _chalcogen_sp3_torsion_barrier(parameter: UffParameter) -> float | None:
+    """Open Babel's UFF torsion barrier override for a Group 6 sp3 atom.
 
-    first_coordination = first.name[-1]
-    second_coordination = second.name[-1]
+    Transcribed from Open Babel 3.1.1's OBForceFieldUFF::SetupCalculations
+    (forcefielduff.cpp): oxygen uses 2.0 kcal/mol, while S/Se/Te/Po use a
+    distinct 6.8 kcal/mol -- not the same value, and not derivable from this
+    project's type-name suffix (S_3+2's "+2" marks oxidation state, not
+    hybridisation, so it must be matched by element prefix instead).
+    """
+
+    if parameter.name.startswith("O_"):
+        return 2.0
+    if parameter.name.startswith("S_"):
+        return 6.8
+    return None
+
+
+def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int, float, float] | None:
+    """Return periodicity, cos(n*phi0), and UFF torsional barrier.
+
+    Dispatch mirrors Open Babel 3.1.1's OBForceFieldUFF::SetupCalculations:
+    the sp3-sp3, sp2-sp2 (including aromatic), and mixed sp2-sp3 cases are
+    matched as exact hybridisation pairs, not by any single coordination
+    character being present in either name -- an earlier version of this
+    function used an "early union-membership" check that let the sp3-sp3
+    branch also (incorrectly) swallow every sp2-sp3 pair, since both
+    contain a "3".
+    """
+
+    first_coordination = _TORSION_COORDINATION[first.name]
+    second_coordination = _TORSION_COORDINATION[second.name]
     if "1" in {first_coordination, second_coordination}:
         # A linear (sp) atom provides no stable reference plane for a
         # dihedral through it: rotating the rest of the molecule around its
@@ -578,27 +623,41 @@ def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int,
         # resulting degenerate-angle error later) matches how real UFF
         # implementations define torsions only between non-linear centers.
         return None
-    if "3" in {first_coordination, second_coordination}:
+    # "_R" (resonant/aromatic) counts as sp2 for this dispatch, matching how
+    # Open Babel's own per-atom hybridisation field treats both the same.
+    first_is_sp2 = first_coordination in {"2", "R"}
+    second_is_sp2 = second_coordination in {"2", "R"}
+    first_is_sp3 = first_coordination == "3"
+    second_is_sp3 = second_coordination == "3"
+    if first_is_sp3 and second_is_sp3:
         periodicity = 3
         ideal = math.radians(60.0)
         first_barrier = first.torsion_barrier
         second_barrier = second.torsion_barrier
-        # UFF's special sp3-sp3 torsion case for a Group 6 atom (O or S)
-        # applies to both chalcogens, not just oxygen; S_3+2's "+2" suffix
-        # is an oxidation-state marker, not a hybridisation code, so it must
-        # be matched by element prefix here rather than by that suffix.
-        if first.name.startswith(("O_", "S_")):
-            periodicity, ideal, first_barrier = 2, math.radians(90.0), 2.0
-        if second.name.startswith(("O_", "S_")):
-            periodicity, ideal, second_barrier = 2, math.radians(90.0), 2.0
+        chalcogen_first = _chalcogen_sp3_torsion_barrier(first)
+        chalcogen_second = _chalcogen_sp3_torsion_barrier(second)
+        if chalcogen_first is not None:
+            periodicity, ideal, first_barrier = 2, math.radians(90.0), chalcogen_first
+        if chalcogen_second is not None:
+            periodicity, ideal, second_barrier = 2, math.radians(90.0), chalcogen_second
         return periodicity, math.cos(periodicity * ideal), 0.5 * math.sqrt(first_barrier * second_barrier)
-    if first_coordination == "R" and second_coordination == "R":
-        aromatic_order = 1.5
+    if first_is_sp2 and second_is_sp2:
+        if first_coordination == "R" and second_coordination == "R":
+            aromatic_order = 1.5
+        else:
+            aromatic_order = 1.0
         barrier = 5.0 * math.sqrt(first.sp2_torsion_barrier * second.sp2_torsion_barrier)
         barrier *= 0.5 * (1.0 + 4.18 * math.log(aromatic_order))
         return 2, 1.0, barrier
-    if {first_coordination, second_coordination} == {"2", "3"}:
-        return 6, 1.0, 0.5
+    if (first_is_sp2 and second_is_sp3) or (first_is_sp3 and second_is_sp2):
+        # The barrier itself (0.5 kcal/mol) is unchanged by the chalcogen
+        # exception here: only the periodicity and phase angle change for
+        # a Group 6 sp3 atom on either side, per Open Babel's source.
+        periodicity, ideal = 6, 0.0
+        sp3_parameter = first if first_is_sp3 else second
+        if _chalcogen_sp3_torsion_barrier(sp3_parameter) is not None:
+            periodicity, ideal = 2, 90.0
+        return periodicity, math.cos(periodicity * math.radians(ideal)), 0.5
     return None
 
 

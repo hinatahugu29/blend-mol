@@ -54,6 +54,12 @@ so re-importing loses bond order the same way any PDB import already does).
 Version 0.1.63 speeds up the plain-Python van der Waals energy check that
 minimization's line search calls on every trial step, roughly halving the
 300-atom case and bringing it to about the 100 ms/10 Hz interactive target.
+Version 0.1.64 fixes torsion energy through a sulfur single bond: a type
+name's last character cannot distinguish P/S hybridisation from oxidation
+state, and a membership check let sp2-sp3 pairs fall into the sp3-sp3
+branch; both were confirmed against Open Babel 3.1.1's own C++ source
+(forcefielduff.cpp), closing the sulfoxide/sulfone torsion gap to within
+0.1 kJ/mol.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
