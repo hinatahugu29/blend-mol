@@ -21,6 +21,9 @@ Version 0.1.53 invalidates background work before Undo, Redo, or file loading,
 preserves Blender's transform-cancel events, and validates deferred auto-start targets.
 Version 0.1.54 restores the Live UFF session's starting coordinates on Escape
 or right-click, including the surrounding atoms, and discards cancelled results.
+Version 0.1.55 checks valence before adding bonded atoms or creating/changing
+bonds, preventing explicit hydrogens left after UFF preparation from being
+silently overbonded by subsequent edits.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

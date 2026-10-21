@@ -47,6 +47,12 @@ their atom and bond graph as a ball-and-stick model.
   making carbon-chain construction possible without a separate two-atom selection.
 - Supports creating, changing, and deleting single/double/triple bonds, with
   valence warnings for common neutral elements.
+  Version 0.1.55 rejects bonded-atom additions and bond edits that introduce or
+  worsen a known valence excess, before modifying data or display. The check
+  uses the same charge-aware rules as the validation panel and allows gradual
+  repair of already overbonded structures. Explicit hydrogens are not removed
+  automatically. For substitution, select a hydrogen and change its element;
+  otherwise remove the unwanted hydrogen/bond before adding a new bond.
 - Includes a non-UFF display-geometry relaxation tool and position snapshots
   for returning to a structure before relaxation.
 - Lets users pin atoms so they remain fixed during display-geometry relaxation;

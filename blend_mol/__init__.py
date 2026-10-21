@@ -606,6 +606,31 @@ def _molecule_validation_messages(molecule: Molecule) -> list[str]:
     return messages
 
 
+def _bond_edit_valence_error(original: Molecule, updated: Molecule, indices) -> str | None:
+    """Reject edits that introduce or worsen a known valence excess.
+
+    Allow an existing invalid structure to be repaired one bond order at a time.
+    These are the same conservative, charge-aware rules used by the panel.
+    """
+    def bond_order_sum(molecule, index):
+        return sum(bond.order for bond in molecule.bonds
+                   if index in (bond.atom_a, bond.atom_b))
+
+    for index in indices:
+        atom = updated.atoms[index]
+        target = _target_valence(atom)
+        total = bond_order_sum(updated, index)
+        previous = bond_order_sum(original, index) if index < len(original.atoms) else 0
+        if target is not None and total > target and total > previous:
+            return (
+                f"Cannot add this bond: atom {index + 1} ({atom.element}) would have "
+                f"bond order {total}, above its valence {target}. "
+                "Remove an existing bond or explicit hydrogen first. "
+                "To replace a hydrogen, select it and use Change Selected Atom Element."
+            )
+    return None
+
+
 def _covalent_radius(element: str) -> float:
     return COVALENT_RADII.get(element, 0.8)
 
@@ -1283,6 +1308,10 @@ class BLENDMOL_OT_add_bonded_atom(Operator):
             molecule.atoms + (Atom(settings.edit_element, tuple(local_position), settings.formal_charge),),
             molecule.bonds + (Bond(atom_index, new_atom_index, settings.bond_order),),
         )
+        error = _bond_edit_valence_error(molecule, updated, (atom_index, new_atom_index))
+        if error:
+            self.report({"WARNING"}, error)
+            return {"CANCELLED"}
         _store_topology_change(root, updated)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, settings)
@@ -1473,6 +1502,10 @@ class BLENDMOL_OT_set_bond(Operator):
             bonds.append(Bond(atom_a, atom_b, order))
             action = "Created"
         updated = Molecule(molecule.name, molecule.atoms, tuple(bonds))
+        error = _bond_edit_valence_error(molecule, updated, (atom_a, atom_b))
+        if error:
+            self.report({"WARNING"}, error)
+            return {"CANCELLED"}
         _store_topology_change(root, updated)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, context.scene.blend_mol_settings)

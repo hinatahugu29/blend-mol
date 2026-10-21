@@ -1,5 +1,16 @@
 # Blend Mol UFF benchmarks
 
+Check bonded-atom additions and bond-order edits after explicit hydrogen
+preparation and UFF minimization:
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_bond_valence.py
+```
+
+This verifies rejected edits preserve data, revision, display object identity,
+and UFF history, while valid additions, charged nitrogen and incremental repair
+of overbonded imports remain possible.
+
 Validate the release ZIP with Steam Blender's own Python, without installing
 the extension or changing preferences:
 
