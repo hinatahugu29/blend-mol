@@ -117,6 +117,9 @@ their atom and bond graph as a ball-and-stick model.
   Version 0.1.50 fixes a Live UFF shutdown race: a timer event already queued
   when the user stops the tool now exits safely instead of accessing the
   worker after it has been released.
+  Version 0.1.51 restores the `native` directory in the distribution ZIP so
+  the Windows Rust DLL is found after Blender installation. The loader also
+  accepts the accidentally flattened DLL location used by 0.1.49 and 0.1.50.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF

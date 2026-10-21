@@ -29,7 +29,13 @@ def set_backend_preference(value: str) -> None:
 
 
 def _library_path() -> Path:
-    return Path(__file__).with_name("native") / "blend_mol_uff.dll"
+    module_directory = Path(__file__).parent
+    packaged = module_directory / "native" / "blend_mol_uff.dll"
+    if packaged.is_file():
+        return packaged
+    # Compatibility with 0.1.49/0.1.50 archives, which accidentally flattened
+    # the native directory while creating the ZIP.
+    return module_directory / "blend_mol_uff.dll"
 
 
 def _load_library():

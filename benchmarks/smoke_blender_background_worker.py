@@ -23,6 +23,8 @@ from blend_mol.uff import (
 
 addon.register()
 try:
+    native_status = addon.backend_status()
+    assert native_status["native_available"], native_status["detail"]
     stopped_operator = type("StoppedLiveUffOperator", (), {})()
     stopped_operator._timer = None
     stopped_operator._worker = None
@@ -184,6 +186,7 @@ try:
         "stateful_fire2_ok",
         "stateful_lbfgs_ok",
         "late_stop_timer_safe",
+        "packaged_rust_dll_loaded",
         len(molecule.atoms),
         completion.elapsed_ms,
         completion.value.final_energy_kcal_mol,
