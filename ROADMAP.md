@@ -96,6 +96,18 @@ UFF は Blend Mol 内へ実装し、Open Babel の導入を必須にしない。
 - [x] FIRE2とL-BFGSを実測比較し、現状は高速・安定なL-BFGS単独を既定化（ハイブリッドは見送り）
 - [x] Blenderの原子移動を検知してLive UFFを自動起動し、追従の収束後に自動停止
 - [ ] 移動ジェスチャーの確定・取消しとUndoを含む厳密な連動を検証（現在は座標移動の検知と収束停止）
+  - 0.1.56: `_queue_auto_live_uff_from_transform`の`update.id == active`比較を修正。
+    `depsgraph_update_post`の`update.id`は常に評価済みコピーであり、変更前の
+    オブジェクトと直接比較すると一致しないため、実機ドラッグで自動Live UFFが
+    一度も開始しない不具合があった（`update.id.original`との比較へ変更）。
+    Steam版Blender 5.2.2のヘッドレス実行で、本物のdepsgraphハンドラ→タイマー
+    予約→モーダル開始→収束停止までを連続した2回のジェスチャーで再現し、
+    各ジェスチャーが直前のジェスチャーの終了座標のみを「開始前」として保存し
+    （累積しない）、`restore_uff_coordinates`がジェスチャー単位で前後へ復元
+    できることを確認。実画面のCtrl+Z/Ctrl+Shift+Zは`bpy.ops.ed.undo`/`redo`が
+    背景モードではウィンドウ/エリア文脈がなく`poll()`で必ず拒否されるため
+    ヘッドレスでは検証不能と判明（`benchmarks/smoke_blender_live_uff_gesture.py`）。
+    実機GUIでの複数ドラッグ後のUndo/Redo往復は引き続き手動確認が必要。
   - 0.1.53: Undo / Redo / ファイル読込前に予約・実行中計算を無効化。
     Escape / 右クリックの取消しイベントをBlender側へ伝播し、自動起動時に対象原子と実移動を再確認。
     Blender 5.2.2のバックグラウンド検証に追加し成功。

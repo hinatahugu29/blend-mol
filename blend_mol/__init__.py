@@ -1829,7 +1829,10 @@ def _queue_auto_live_uff_from_transform(scene, depsgraph) -> None:
     if active is None or active.get("blend_mol_kind") != "atom" or active.get("blend_mol_implicit"):
         return
     for update in depsgraph.updates:
-        if update.id == active and update.is_updated_transform:
+        # ``update.id`` is the depsgraph's evaluated copy, which never equals
+        # the original data-block even without modifiers; compare ``.original``.
+        updated_id = getattr(update.id, "original", update.id)
+        if updated_id == active and update.is_updated_transform:
             selected = _selected_explicit_atom(bpy.context)
             if selected is None:
                 return

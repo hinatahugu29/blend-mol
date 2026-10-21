@@ -23,7 +23,11 @@ Version 0.1.54 restores the Live UFF session's starting coordinates on Escape
 or right-click, including the surrounding atoms, and discards cancelled results.
 Version 0.1.55 checks valence before adding bonded atoms or creating/changing
 bonds, preventing explicit hydrogens left after UFF preparation from being
-silently overbonded by subsequent edits.
+silently overbonded by subsequent edits. Version 0.1.56 fixes the depsgraph
+comparison that silently prevented automatic Live UFF from ever starting on a
+real atom move, since every Blender depsgraph update carries an evaluated
+copy of the moved object, never the original data-block it was compared
+against.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

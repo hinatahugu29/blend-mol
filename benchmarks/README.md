@@ -32,6 +32,22 @@ propagation. Run it with `--python-exit-code 1` to report assertion failures:
 & 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_background_worker.py
 ```
 
+Verify the real automatic Live UFF trigger end to end, through the actual
+depsgraph handler and the actual modal operator, across two consecutive
+completed drags:
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_live_uff_gesture.py
+```
+
+This also confirms `restore_uff_coordinates` undoes exactly one completed
+gesture at a time (its "before" snapshot is overwritten by each new gesture,
+never accumulated), and documents that real Blender Undo/Redo
+(`bpy.ops.ed.undo` / `redo`) cannot be driven from a background script: both
+operators fail `poll()` without an interactive window/area context, so a
+multi-drag Ctrl+Z/Ctrl+Shift+Z round-trip still needs manual verification in
+the GUI.
+
 Run from the repository root:
 
 ```powershell
