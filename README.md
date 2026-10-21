@@ -45,7 +45,10 @@ Version 0.1.60 adds silicon, boron, and hypervalent phosphorus UFF typing,
 and widens neutral tetravalent P=O and sulfoxide/sulfone typing to match
 Open Babel's own fallback behavior (confirmed against a standalone Open
 Babel 3.1.1 install); it also fixes sulfur's torsion treatment missing the
-same Group 6 special case oxygen already had.
+same Group 6 special case oxygen already had. Version 0.1.61 locks the
+Cl/Br/I electronegativity fix in with a permanent halomethane regression
+test, and adds a GitHub Actions workflow that runs the full dependency-free
+and Blender-based test suites automatically on every push.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

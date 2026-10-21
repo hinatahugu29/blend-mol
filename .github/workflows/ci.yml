@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Dependency-free unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unittest discovery
+        run: python -m unittest discover -s tests -v
+
+  blender-smoke:
+    name: Blender headless smoke suites (Windows, native Rust backend)
+    runs-on: windows-latest
+    env:
+      BLENDER_VERSION: "5.2.2"
+      BLENDER_SERIES: "5.2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Blender download
+        id: cache-blender
+        uses: actions/cache@v4
+        with:
+          path: blender-download
+          key: blender-${{ env.BLENDER_VERSION }}-windows-x64
+
+      - name: Download Blender
+        if: steps.cache-blender.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path blender-download | Out-Null
+          Invoke-WebRequest `
+            -Uri "https://download.blender.org/release/Blender${env:BLENDER_SERIES}/blender-${env:BLENDER_VERSION}-windows-x64.zip" `
+            -OutFile "blender-download/blender.zip"
+
+      - name: Extract Blender
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "blender-download/blender.zip" -DestinationPath "blender-extracted" -Force
+          $blenderExe = Get-ChildItem -Path "blender-extracted" -Filter "blender.exe" -Recurse | Select-Object -First 1
+          $pythonExe = Get-ChildItem -Path "blender-extracted" -Filter "python.exe" -Recurse | Select-Object -First 1
+          if (-not $blenderExe -or -not $pythonExe) {
+            throw "Could not locate blender.exe/python.exe under blender-extracted"
+          }
+          echo "BLENDER_EXE=$($blenderExe.FullName)" >> $env:GITHUB_ENV
+          echo "BLENDER_PYTHON=$($pythonExe.FullName)" >> $env:GITHUB_ENV
+
+      - name: Build release ZIP
+        shell: pwsh
+        run: |
+          & "$env:BLENDER_PYTHON" benchmarks\build_release_zip.py
+
+      - name: Run dependency-free unit tests (Blender's own Python)
+        shell: pwsh
+        run: |
+          & "$env:BLENDER_PYTHON" -m unittest discover -s tests -v
+
+      - name: Smoke test - background worker
+        shell: pwsh
+        run: |
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_background_worker.py
+
+      - name: Smoke test - bond valence
+        shell: pwsh
+        run: |
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_bond_valence.py
+
+      - name: Smoke test - Live UFF gesture lifecycle
+        shell: pwsh
+        run: |
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_live_uff_gesture.py
+
+      - name: Smoke test - CRUD/display operator lifecycle
+        shell: pwsh
+        run: |
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_crud_lifecycle.py
+
+      - name: Validate packaged native DLL in the release ZIP
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path dist -Filter "blend_mol-*.zip" | Select-Object -First 1
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\validate_distribution.py -- $zip.FullName
+
+      - name: Validate extension manifest
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path dist -Filter "blend_mol-*.zip" | Select-Object -First 1
+          & "$env:BLENDER_EXE" --background --factory-startup --command extension validate $zip.FullName
+
+      - name: Upload release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: blend_mol-release-zip
+          path: dist/blend_mol-*.zip

@@ -1,5 +1,17 @@
 # Blend Mol UFF benchmarks
 
+Build the release ZIP, preserving the native/ subfolder (PowerShell's
+`Compress-Archive` flattens it when given an individual file path, which is
+exactly what shipped broken in 0.1.49/0.1.50):
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\5.2\python\bin\python.exe' benchmarks\build_release_zip.py
+```
+
+It reads the version from `blend_mol/blender_manifest.toml` and writes
+`dist/blend_mol-<version>.zip`, then verifies the archive's member list
+itself before reporting success.
+
 Exercise the basic atom/bond CRUD, constraint, snapshot, display, and
 import/export operators end to end through real `bpy.ops.blendmol.*` calls.
 Before this test, these operators (add/delete atom and bond, element and
@@ -27,7 +39,7 @@ Validate the release ZIP with Steam Blender's own Python, without installing
 the extension or changing preferences:
 
 ```powershell
-& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\validate_distribution.py -- dist\blend_mol-0.1.52.zip
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\validate_distribution.py -- dist\blend_mol-0.1.60.zip
 ```
 
 This checks the packaged DLL path, an actual native kernel evaluation against

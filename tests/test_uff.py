@@ -414,6 +414,41 @@ class TestUffTyping(unittest.TestCase):
                 observed[component], expected, delta=tolerances[component], msg=component
             )
 
+    def test_halomethane_bond_energy_matches_openbabel_uff_reference(self):
+        # Regression guard for the Cl/Br/I electronegativity bug: these
+        # values are from Open Babel 3.1.1 (obenergy -ff UFF), captured with
+        # tests/openbabel_uff_311.prm as BABEL_DATADIR. Chloromethane is the
+        # most sensitive of the three to the electronegativity correction in
+        # _equilibrium_bond_length; reverting Cl/Br/I's Xi to the old,
+        # swapped-with-Hard values shifts its bond energy from 4.4887 to
+        # 4.9265 kJ/mol, comfortably outside this test's tolerance.
+        conversion = 4.184
+        reference_total_kj_mol = {
+            "CH3Cl": 4.49465,
+            "CH3Br": 4.52993,
+            "CH3I": 4.49263,
+        }
+        for name, element, bond_length, expected_total in (
+            ("CH3Cl", "Cl", 1.78, reference_total_kj_mol["CH3Cl"]),
+            ("CH3Br", "Br", 1.94, reference_total_kj_mol["CH3Br"]),
+            ("CH3I", "I", 2.13, reference_total_kj_mol["CH3I"]),
+        ):
+            molecule = Molecule(
+                name,
+                (
+                    Atom("C", (0.0, 0.0, 0.0)),
+                    Atom(element, (bond_length, 0.0, 0.0)),
+                    Atom("H", (-0.36, 1.01, 0.0)),
+                    Atom("H", (-0.36, -0.51, 0.88)),
+                    Atom("H", (-0.36, -0.51, -0.88)),
+                ),
+                (Bond(0, 1, 1), Bond(0, 2, 1), Bond(0, 3, 1), Bond(0, 4, 1)),
+            )
+            observed_total = partial_energy(molecule).energy_kcal_mol * conversion
+            self.assertAlmostEqual(
+                observed_total, expected_total, delta=0.05, msg=name,
+            )
+
     def test_auto_falls_back_and_forced_rust_reports_missing_dll(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
         saved_library = native_backend._LIBRARY
