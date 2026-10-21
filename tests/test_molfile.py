@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "blend_mol"))
-from molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_v2000, write_xyz
+from molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_v2000, write_xyz
 
 
 class TestTriphenyleneMolfile(unittest.TestCase):
@@ -89,6 +89,28 @@ class TestTriphenyleneMolfile(unittest.TestCase):
 
         self.assertEqual(molecule.atoms, (Atom("C", (0.0, 0.0, 0.0)), Atom("O", (1.13, 0.0, 0.0))))
         self.assertEqual(molecule.bonds, (Bond(0, 1, 1),))
+
+    def test_writes_and_reads_back_pdb_coordinates_and_connectivity(self):
+        molecule = Molecule(
+            "ethanol-like",
+            (
+                Atom("C", (0.0, 0.0, 0.0)),
+                Atom("C", (1.5, 0.0, 0.0)),
+                Atom("O", (2.2, 1.1, 0.0)),
+            ),
+            (Bond(0, 1, 1), Bond(1, 2, 2)),
+        )
+        with TemporaryDirectory() as temporary_directory:
+            target = Path(temporary_directory) / "roundtrip.pdb"
+            write_pdb(molecule, target)
+            roundtripped = read_pdb(target)
+
+        self.assertEqual(roundtripped.atoms, molecule.atoms)
+        # PDB CONECT has no bond-order field; every bond reads back as
+        # order 1, matching how read_pdb already treats any PDB file.
+        self.assertEqual(
+            roundtripped.bonds, (Bond(0, 1, 1), Bond(1, 2, 1)),
+        )
 
     def test_reads_first_sdf_record_without_using_later_records(self):
         mol = (ROOT / "tests" / "charged_ammonium.mol").read_text(encoding="utf-8")

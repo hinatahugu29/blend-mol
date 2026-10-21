@@ -448,6 +448,53 @@ def write_xyz(molecule: Molecule, path: str | Path) -> None:
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_pdb(molecule: Molecule, path: str | Path) -> None:
+    """Write atom coordinates as HETATM records with CONECT connectivity.
+
+    PDB CONECT records do not encode bond order, matching how read_pdb
+    already reads every CONECT entry back as a single bond; re-importing a
+    molecule written here loses any double/triple bond order and formal
+    charges, same as it does for any other PDB file.
+    """
+
+    atom_count = len(molecule.atoms)
+    if atom_count > 99999:
+        raise MolfileError("PDB writing supports at most 99999 atoms.")
+    for index, atom in enumerate(molecule.atoms):
+        if not atom.element or len(atom.element) > 2 or any(char.isspace() for char in atom.element):
+            raise MolfileError(f"Atom {index + 1} has an invalid element symbol.")
+
+    lines = []
+    for index, atom in enumerate(molecule.atoms):
+        serial = index + 1
+        name = atom.element.upper().ljust(4)
+        # Fixed-width PDB columns (0-indexed slices): [6:11] serial,
+        # [12:16] name, [17:20] resName, [21] chain, [22:26] resSeq,
+        # [30:38]/[38:46]/[46:54] x/y/z, [54:60]/[60:66] occupancy/temp,
+        # [76:78] element -- matching exactly what read_pdb slices back out.
+        lines.append(
+            f"HETATM{serial:>5} {name}{' '}MOL A{1:>4}    "
+            f"{atom.position[0]:8.3f}{atom.position[1]:8.3f}{atom.position[2]:8.3f}"
+            f"{1.0:6.2f}{0.0:6.2f}          {atom.element.upper():>2}"
+        )
+    neighbors: list[list[int]] = [[] for _atom in molecule.atoms]
+    for bond in molecule.bonds:
+        if not 0 <= bond.atom_a < atom_count or not 0 <= bond.atom_b < atom_count:
+            raise MolfileError("A bond references an unknown atom.")
+        neighbors[bond.atom_a].append(bond.atom_b)
+        neighbors[bond.atom_b].append(bond.atom_a)
+    for index, attached in enumerate(neighbors):
+        if not attached:
+            continue
+        serial = index + 1
+        attached_serials = sorted(other + 1 for other in attached)
+        for offset in range(0, len(attached_serials), 4):
+            group = attached_serials[offset:offset + 4]
+            lines.append(f"CONECT{serial:>5}" + "".join(f"{other:>5}" for other in group))
+    lines.append("END")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def read_xyz(path: str | Path) -> Molecule:
     """Read atom elements and Cartesian coordinates from a standard XYZ file."""
     source = Path(path)

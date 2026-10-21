@@ -267,6 +267,7 @@ try:
         tmp_path = Path(tmp)
         mol_path = tmp_path / "roundtrip.mol"
         xyz_path = tmp_path / "roundtrip.xyz"
+        pdb_path = tmp_path / "roundtrip.pdb"
         report_path = tmp_path / "roundtrip.json"
 
         def _noop_report(_self, _flags, _message):
@@ -287,6 +288,13 @@ try:
         assert export_xyz_result == {"FINISHED"}, export_xyz_result
         assert xyz_path.is_file() and xyz_path.stat().st_size > 0
 
+        export_pdb_result = addon.BLENDMOL_OT_export_pdb.execute(
+            type("ExportOp", (), {"filepath": str(pdb_path), "report": _noop_report})(),
+            addon.bpy.context,
+        )
+        assert export_pdb_result == {"FINISHED"}, export_pdb_result
+        assert pdb_path.is_file() and pdb_path.stat().st_size > 0
+
         export_report_result = addon.BLENDMOL_OT_export_uff_report.execute(
             type("ExportReportOp", (), {"filepath": str(report_path), "report": _noop_report})(),
             addon.bpy.context,
@@ -298,6 +306,8 @@ try:
         assert import_result == {"FINISHED"}, import_result
         import_xyz_result = addon.bpy.ops.blendmol.import_xyz(filepath=str(xyz_path))
         assert import_xyz_result == {"FINISHED"}, import_xyz_result
+        import_pdb_result = addon.bpy.ops.blendmol.import_pdb(filepath=str(pdb_path))
+        assert import_pdb_result == {"FINISHED"}, import_pdb_result
 
         # bpy.ops raises RuntimeError whenever an operator reports an ERROR
         # level message, regardless of its returned status set; the operator
@@ -347,7 +357,7 @@ try:
         "delete_atom_reindexes_fixed_atoms_ok",
         "delete_bond_ok",
         "rebuild_subdivision_colors_ok",
-        "export_import_v2000_xyz_sdf_ok",
+        "export_import_v2000_xyz_pdb_sdf_ok",
         "export_uff_report_ok",
         "missing_file_import_cancelled_ok",
         "smiles_import_ok",

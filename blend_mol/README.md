@@ -19,6 +19,10 @@ their atom and bond graph as a ball-and-stick model.
   bonds can then be created in Blend Mol.
 - Imports PDB `ATOM` / `HETATM` coordinates and single bonds recorded in
   `CONECT` entries, without inferring additional hydrogens.
+- Exports the selected molecule's atom coordinates and connectivity as a PDB
+  file with `HETATM`/`CONECT` records. PDB `CONECT` has no bond-order field,
+  so re-importing it loses bond order and formal charges, the same way any
+  other PDB import already does.
 - Imports the first V2000 structure record in an SDF file.
 - Creates a basic organic molecule directly from SMILES, including common
   elements, formal charges, branches, ring closures, and single/double/triple
