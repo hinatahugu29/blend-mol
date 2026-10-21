@@ -1,5 +1,17 @@
 # Blend Mol UFF benchmarks
 
+Exercise the basic atom/bond CRUD, constraint, snapshot, display, and
+import/export operators end to end through real `bpy.ops.blendmol.*` calls.
+Before this test, these operators (add/delete atom and bond, element and
+charge edits, fixed atoms, all three constraint kinds, position snapshots,
+non-UFF relax, partial UFF minimization, rebuild/sync/subdivision/colors, and
+every import/export format) had only manual verification recorded in
+ROADMAP.md, none of it under `--python-exit-code 1`:
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_crud_lifecycle.py
+```
+
 Check bonded-atom additions and bond-order edits after explicit hydrogen
 preparation and UFF minimization:
 

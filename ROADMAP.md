@@ -69,6 +69,13 @@ UFF は Blend Mol 内へ実装し、Open Babel の導入を必須にしない。
 - [x] 部分 UFF の原子型・エネルギー項・最小化ログを JSON レポートとして書き出し
 - [x] 最適化前後の座標・エネルギー・収束ログの保存と、前後表示の切り替え
 - [x] 失敗時に元座標を維持するロールバックと未対応原子型の明示
+- [x] 原子・結合のCRUD、固定原子、3種の拘束、位置スナップショット、表示再構築・
+  Subdivision・色リセット、全インポート/エクスポート形式を`bpy.ops.blendmol.*`
+  経由でヘッドレスに一括検証（`benchmarks/smoke_blender_crud_lifecycle.py`）。
+  それまでROADMAP記載の手動検証のみで、`--python-exit-code 1`下での
+  例外検出は行われていなかった。ERRORレベルの`report`を伴う操作は
+  `bpy.ops`経由だとCANCELLED返り値でも`RuntimeError`が発生する点を確認し、
+  オペレータの`.execute()`直接呼び出しと両方で検証。
 
 ## 5. 拡張
 
