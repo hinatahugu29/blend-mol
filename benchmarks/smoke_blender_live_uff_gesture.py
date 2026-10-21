@@ -149,6 +149,40 @@ try:
         "restoring AFTER must return to gesture 2's settled result"
     )
 
+    # --- Gesture 3: real auto-start, cancelled mid-flight via Escape -------
+    # Before this session's fix, the real depsgraph handler never armed the
+    # auto-start timer at all, so a cancelled *real* auto session could never
+    # be exercised; only a manually constructed operator state was tested.
+    pre_cancel_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    pre_cancel_position = tuple(pre_cancel_molecule.atoms[0].position)
+    cancel_atom_object = next(
+        obj for obj in collection.objects
+        if obj.get("blend_mol_kind") == "atom"
+        and not obj.get("blend_mol_implicit")
+        and obj.get("blend_mol_atom_index") == 0
+    )
+    for obj in addon.bpy.context.selected_objects:
+        obj.select_set(False)
+    cancel_atom_object.select_set(True)
+    addon.bpy.context.view_layer.objects.active = cancel_atom_object
+    cancel_atom_object.location.z += 0.25
+    trigger_real_auto_start(cancel_atom_object)
+    operator = addon._LIVE_UFF_OPERATOR
+    assert operator is not None, "real auto-start must produce a running operator to cancel"
+    escape_event = type("EscapeEvent", (), {"type": "ESC", "value": "PRESS"})()
+    result = addon.BLENDMOL_OT_toggle_live_uff.modal(operator, addon.bpy.context, escape_event)
+    assert result == {"CANCELLED", "PASS_THROUGH"}, result
+    assert addon._LIVE_UFF_OPERATOR is None, "cancelling must clear the running operator"
+    cancelled_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    assert math.dist(cancelled_molecule.atoms[0].position, pre_cancel_position) < 1e-6, (
+        "Escape on a real auto-started gesture must restore the pre-drag coordinates"
+    )
+    assert root["blend_mol_live_uff_phase"] == "cancelled"
+    # A cancelled real gesture must not overwrite the previous completed
+    # gesture's before/after snapshot used by the restore operator.
+    assert json.loads(root["blend_mol_uff_before_positions"]) == before_2
+    assert json.loads(root["blend_mol_uff_after_positions"]) == after_2
+
     # --- Documented automation boundary: real WM undo/redo need a window --
     undo_blocked = False
     try:
@@ -167,6 +201,7 @@ try:
         "two_sequential_gestures_ok",
         "per_gesture_snapshot_granularity_ok",
         "restore_before_after_granularity_ok",
+        "real_auto_start_escape_cancel_ok",
         "background_undo_redo_poll_boundary_confirmed",
         session_1["applied_updates"],
         session_2["applied_updates"],
