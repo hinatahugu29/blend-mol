@@ -17,6 +17,8 @@ steepest-descent reference. Version 0.1.50 fixes safe handling of a late timer
 event immediately after Live UFF is stopped. Version 0.1.51 fixes the packaged
 path of the Windows Rust DLL. Version 0.1.52 can start Live UFF automatically
 when an explicit atom is moved, then stop after the surrounding atoms settle.
+Version 0.1.53 invalidates background work before Undo, Redo, or file loading,
+preserves Blender's transform-cancel events, and validates deferred auto-start targets.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

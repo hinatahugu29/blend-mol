@@ -35,8 +35,8 @@ try:
     stopped_operator._optimizer_state = None
     stopped_operator._applied_results = 0
     stopped_operator._initial_positions = None
-    stopped_operator._finish = lambda context: addon.BLENDMOL_OT_toggle_live_uff._finish(
-        stopped_operator, context
+    stopped_operator._finish = lambda context, **kwargs: addon.BLENDMOL_OT_toggle_live_uff._finish(
+        stopped_operator, context, **kwargs
     )
     assert stopped_operator._finish(addon.bpy.context) == {"CANCELLED"}
     assert stopped_operator._stop_requested
@@ -46,6 +46,39 @@ try:
     ) == {"CANCELLED"}
     molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
     root = addon._create_molecule(molecule, addon.bpy.context.scene.blend_mol_settings, "smoke")
+    collection = addon._molecule_collection(root)
+    atom_object = next(obj for obj in collection.objects
+                       if obj.get("blend_mol_kind") == "atom"
+                       and not obj.get("blend_mol_implicit")
+                       and obj.get("blend_mol_atom_index") == 0)
+    assert not addon._explicit_atom_has_moved(root, atom_object, 0)
+    atom_object.location.x += 0.2
+    addon.bpy.context.view_layer.update()
+    assert addon._explicit_atom_has_moved(root, atom_object, 0)
+    atom_object.location.x -= 0.2
+    addon.bpy.context.view_layer.update()
+    assert not addon._explicit_atom_has_moved(root, atom_object, 0)
+    for handlers in (addon.bpy.app.handlers.undo_pre, addon.bpy.app.handlers.redo_pre,
+                     addon.bpy.app.handlers.load_pre):
+        assert addon._invalidate_live_uff_before_history_change in handlers
+    addon._AUTO_LIVE_UFF_TIMER_PENDING = True
+    addon._AUTO_LIVE_UFF_TARGET = (root.name, atom_object.name, 0)
+    addon.bpy.app.timers.register(addon._start_auto_live_uff, first_interval=60)
+    addon._LIVE_UFF_OPERATOR = stopped_operator
+    stopped_operator._stop_requested = False
+    stopped_operator._cancel_event = threading.Event()
+    cancellation = stopped_operator._cancel_event
+    addon._invalidate_live_uff_before_history_change()
+    assert cancellation.is_set()
+    assert addon._LIVE_UFF_OPERATOR is None
+    assert not addon._AUTO_LIVE_UFF_TIMER_PENDING
+    assert addon._AUTO_LIVE_UFF_TARGET is None
+    assert not addon.bpy.app.timers.is_registered(addon._start_auto_live_uff)
+    escape = type("CancelEvent", (), {"type": "ESC", "value": "PRESS"})()
+    stopped_operator._stop_requested = False
+    assert addon.BLENDMOL_OT_toggle_live_uff.modal(
+        stopped_operator, addon.bpy.context, escape
+    ) == {"CANCELLED", "PASS_THROUGH"}
     original_revision = addon._molecule_revision(root)
     moved_only = addon.Molecule(
         molecule.name,

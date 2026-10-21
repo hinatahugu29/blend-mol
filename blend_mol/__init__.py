@@ -1730,11 +1730,33 @@ class BLENDMOL_OT_benchmark_uff_step(Operator):
 
 _LIVE_UFF_OPERATOR = None
 _AUTO_LIVE_UFF_TIMER_PENDING = False
+_AUTO_LIVE_UFF_TARGET = None
+
+
+def _explicit_atom_has_moved(root, atom_object, atom_index):
+    molecule = _deserialize_molecule(root["blend_mol_data"])
+    position = atom_object.matrix_local.translation
+    return any(abs(position[axis] - molecule.atoms[atom_index].position[axis]) > 1e-7
+               for axis in range(3))
+
+
+@persistent
+def _invalidate_live_uff_before_history_change(*_args):
+    """Discard pending and in-flight work before Undo, Redo, or file loading."""
+    global _AUTO_LIVE_UFF_TIMER_PENDING, _AUTO_LIVE_UFF_TARGET
+    if bpy.app.timers.is_registered(_start_auto_live_uff):
+        bpy.app.timers.unregister(_start_auto_live_uff)
+    _AUTO_LIVE_UFF_TIMER_PENDING = False
+    _AUTO_LIVE_UFF_TARGET = None
+    if _LIVE_UFF_OPERATOR is not None:
+        _LIVE_UFF_OPERATOR._finish(bpy.context, save_session=False)
 
 
 def _start_auto_live_uff() -> None:
     """Start Live UFF outside the depsgraph callback after an atom transform."""
-    global _AUTO_LIVE_UFF_TIMER_PENDING
+    global _AUTO_LIVE_UFF_TIMER_PENDING, _AUTO_LIVE_UFF_TARGET
+    target = _AUTO_LIVE_UFF_TARGET
+    _AUTO_LIVE_UFF_TARGET = None
     _AUTO_LIVE_UFF_TIMER_PENDING = False
     if _LIVE_UFF_OPERATOR is not None:
         return None
@@ -1745,11 +1767,16 @@ def _start_auto_live_uff() -> None:
     selected = _selected_explicit_atom(context)
     if selected is None:
         return None
+    root, _collection, atom_index = selected
+    if target != (root.name, context.active_object.name, atom_index):
+        return None
     try:
+        if not _explicit_atom_has_moved(root, context.active_object, atom_index):
+            return None
         bpy.ops.blendmol.toggle_live_uff(
             "INVOKE_DEFAULT", start_immediately=True, auto_stop_when_ready=True,
         )
-    except RuntimeError:
+    except (RuntimeError, KeyError, IndexError, TypeError, ValueError, ReferenceError):
         # Blender can legitimately have no suitable window context while loading
         # a file or changing workspaces. The next transform queues a fresh start.
         pass
@@ -1759,7 +1786,7 @@ def _start_auto_live_uff() -> None:
 @persistent
 def _queue_auto_live_uff_from_transform(scene, depsgraph) -> None:
     """Defer automatic Live UFF startup until Blender finishes a transform update."""
-    global _AUTO_LIVE_UFF_TIMER_PENDING
+    global _AUTO_LIVE_UFF_TIMER_PENDING, _AUTO_LIVE_UFF_TARGET
     if _LIVE_UFF_OPERATOR is not None or _AUTO_LIVE_UFF_TIMER_PENDING:
         return
     settings = getattr(scene, "blend_mol_settings", None)
@@ -1770,6 +1797,16 @@ def _queue_auto_live_uff_from_transform(scene, depsgraph) -> None:
         return
     for update in depsgraph.updates:
         if update.id == active and update.is_updated_transform:
+            selected = _selected_explicit_atom(bpy.context)
+            if selected is None:
+                return
+            root, _collection, atom_index = selected
+            try:
+                if not _explicit_atom_has_moved(root, active, atom_index):
+                    return
+            except (KeyError, IndexError, TypeError, ValueError, ReferenceError):
+                return
+            _AUTO_LIVE_UFF_TARGET = (root.name, active.name, atom_index)
             _AUTO_LIVE_UFF_TIMER_PENDING = True
             bpy.app.timers.register(_start_auto_live_uff, first_interval=0.0)
             return
@@ -1820,7 +1857,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
             self._optimizer_state,
         ))
 
-    def _finish(self, context):
+    def _finish(self, context, save_session=True):
         global _LIVE_UFF_OPERATOR
         self._stop_requested = True
         if self._timer is not None:
@@ -1838,7 +1875,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         if root is not None:
             root["blend_mol_live_uff_running"] = False
             root["blend_mol_live_uff_phase"] = "stopped"
-            if self._applied_results and self._initial_positions is not None:
+            if save_session and self._applied_results and self._initial_positions is not None:
                 try:
                     _store_live_uff_session(
                         root, self._initial_positions, self._topology_at_start,
@@ -1901,8 +1938,12 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         return self.invoke(context, None)
 
     def modal(self, context, event):
-        if self._stop_requested or event.type == "ESC":
+        if self._stop_requested:
             return self._finish(context)
+        if event.type == "ESC" or (event.type == "RIGHTMOUSE" and event.value == "PRESS"):
+            self._finish(context)
+            # Let Blender's active transform also receive its cancel event.
+            return {"CANCELLED", "PASS_THROUGH"}
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
         if self._worker is None:
@@ -1959,7 +2000,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
             )
             if not result.ready:
                 root["blend_mol_live_uff_error"] = result.messages[0] if result.messages else "UFF step failed"
-                return {"PASS_THROUGH"}
+                return self._finish(context)
             root["blend_mol_data"] = _serialize_molecule(result.molecule)
             self._applied_results += 1
             display_started = perf_counter()
@@ -1998,6 +2039,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                     return self._finish(context)
         except (ArithmeticError, KeyError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
             root["blend_mol_live_uff_error"] = str(exc)
+            return self._finish(context)
         return {"PASS_THROUGH"}
 
 
@@ -2806,12 +2848,19 @@ def register():
     bpy.types.Scene.blend_mol_settings = PointerProperty(type=BlendMolSettings)
     if _queue_auto_live_uff_from_transform not in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.append(_queue_auto_live_uff_from_transform)
+    for handlers in (bpy.app.handlers.undo_pre, bpy.app.handlers.redo_pre, bpy.app.handlers.load_pre):
+        if _invalidate_live_uff_before_history_change not in handlers:
+            handlers.append(_invalidate_live_uff_before_history_change)
 
 
 def unregister():
     global _AUTO_LIVE_UFF_TIMER_PENDING, _LIVE_UFF_OPERATOR
     if _LIVE_UFF_OPERATOR is not None:
         _LIVE_UFF_OPERATOR._finish(bpy.context)
+    _invalidate_live_uff_before_history_change()
+    for handlers in (bpy.app.handlers.undo_pre, bpy.app.handlers.redo_pre, bpy.app.handlers.load_pre):
+        if _invalidate_live_uff_before_history_change in handlers:
+            handlers.remove(_invalidate_live_uff_before_history_change)
     if _queue_auto_live_uff_from_transform in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.remove(_queue_auto_live_uff_from_transform)
     if bpy.app.timers.is_registered(_start_auto_live_uff):

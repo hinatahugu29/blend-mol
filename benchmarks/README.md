@@ -13,6 +13,14 @@ and the forced-Rust error. It uses a temporary extraction directory and releases
 the Windows DLL before cleanup. This gate targets Windows AMD64; it does not
 establish compatibility with other CPUs or Blender versions.
 
+The Blender background smoke suite also checks move detection, pending timer
+cleanup and cancellation before history changes, and transform-cancel event
+propagation. Run it with `--python-exit-code 1` to report assertion failures:
+
+```powershell
+& 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_background_worker.py
+```
+
 Run from the repository root:
 
 ```powershell

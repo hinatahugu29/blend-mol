@@ -123,6 +123,11 @@ their atom and bond graph as a ball-and-stick model.
   Version 0.1.52 adds an opt-in **Start Live UFF When Moving an Atom** switch.
   It detects a transform of the active explicit atom, begins a background Live
   UFF relaxation, and stops after the configured settling sequence completes.
+  Version 0.1.53 cancels pending and running work before Undo, Redo, and file
+  loading. Escape and right-click also reach Blender's transform operator.
+  Deferred automatic startup verifies the same atom is still selected and has
+  actually moved; calculation failures terminate the session. Full rollback of
+  surrounding atoms on transform cancellation remains pending.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF
