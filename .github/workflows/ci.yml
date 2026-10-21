@@ -7,7 +7,12 @@ on:
 jobs:
   unit-tests:
     name: Dependency-free unit tests
-    runs-on: ubuntu-latest
+    # windows-latest, not ubuntu-latest: three tests force the native Rust
+    # backend to check Python/Rust parity, and blend_mol/native/blend_mol_uff.dll
+    # is a Windows PE DLL (this project's native path is Windows-only; see
+    # RUST_BACKEND.md). On Linux it fails to load ("invalid ELF header") and
+    # those forced-Rust tests error instead of falling back.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
