@@ -35,6 +35,10 @@ try:
     stopped_operator._optimizer_state = None
     stopped_operator._applied_results = 0
     stopped_operator._initial_positions = None
+    stopped_operator._initial_live_log = None
+    stopped_operator._cancel_and_restore = lambda context: addon.BLENDMOL_OT_toggle_live_uff._cancel_and_restore(
+        stopped_operator, context
+    )
     stopped_operator._finish = lambda context, **kwargs: addon.BLENDMOL_OT_toggle_live_uff._finish(
         stopped_operator, context, **kwargs
     )
@@ -79,6 +83,80 @@ try:
     assert addon.BLENDMOL_OT_toggle_live_uff.modal(
         stopped_operator, addon.bpy.context, escape
     ) == {"CANCELLED", "PASS_THROUGH"}
+    # Exercise the real Blender molecule/display and real latest-only worker.
+    # Both held and surrounding atoms must return, without replacing objects or
+    # recording a cancelled result as a successful session.
+    settings = addon.bpy.context.scene.blend_mol_settings
+    initial_data = root["blend_mol_data"]
+    object_pointers = {obj.name: obj.as_pointer() for obj in collection.objects}
+    for cancel_type in ("ESC", "RIGHTMOUSE"):
+        stopped_operator._root_name = root.name
+        stopped_operator._topology_revision = addon._molecule_revision(root)
+        stopped_operator._topology_at_start = addon._topology_signature(molecule)
+        stopped_operator._initial_positions = addon._serialize_positions(molecule)
+        stopped_operator._initial_live_log = "previous successful log"
+        stopped_operator._applied_results = 2
+        stopped_operator._stop_requested = False
+        distorted = addon.Molecule(molecule.name, tuple(
+            addon.Atom(atom.element, (atom.position[0] + 0.3, atom.position[1], atom.position[2]),
+                       atom.formal_charge, atom.chirality)
+            for atom in molecule.atoms
+        ), molecule.bonds)
+        root["blend_mol_data"] = addon._serialize_molecule(distorted)
+        assert addon._update_explicit_display_geometry(root, collection, distorted, settings)
+        root["blend_mol_uff_live_last"] = "cancelled calculation log"
+        stopped_operator._cancel_event = threading.Event()
+        cancel_signal = stopped_operator._cancel_event
+        started = threading.Event()
+        def delayed_calculation(item):
+            started.set()
+            assert cancel_signal.wait(5), "cancellation was not signalled"
+            return item
+        old_worker = LatestOnlyWorker(delayed_calculation)
+        stopped_operator._worker = old_worker
+        old_worker.submit(distorted)
+        assert started.wait(5)
+        addon._LIVE_UFF_OPERATOR = stopped_operator
+        cancel_event = type("CancelEvent", (), {"type": cancel_type, "value": "PRESS"})()
+        assert addon.BLENDMOL_OT_toggle_live_uff.modal(
+            stopped_operator, addon.bpy.context, cancel_event
+        ) == {"CANCELLED", "PASS_THROUGH"}
+        old_worker.stop(wait=True)
+        assert old_worker.poll_latest() is None
+        assert cancel_signal.is_set()
+        assert root["blend_mol_data"] == initial_data
+        assert root["blend_mol_live_uff_phase"] == "cancelled"
+        assert root["blend_mol_uff_live_last"] == "previous successful log"
+        assert "blend_mol_live_uff_session" not in root
+        for obj in collection.objects:
+            if obj.get("blend_mol_kind") == "atom" and not obj.get("blend_mol_implicit"):
+                index = obj["blend_mol_atom_index"]
+                assert math.dist(obj.matrix_local.translation, molecule.atoms[index].position) < 1e-6
+        assert {obj.name: obj.as_pointer() for obj in collection.objects} == object_pointers
+        assert addon.BLENDMOL_OT_toggle_live_uff.modal(
+            stopped_operator, addon.bpy.context, late_timer
+        ) == {"CANCELLED"}
+        assert root["blend_mol_live_uff_phase"] == "cancelled"
+        assert "blend_mol_live_uff_session" not in root
+        for obj in addon.bpy.context.selected_objects:
+            obj.select_set(False)
+        atom_object.select_set(True)
+        addon.bpy.context.view_layer.objects.active = atom_object
+        settings.uff_live_auto_start = True
+        addon.bpy.context.view_layer.update()
+        assert not addon._AUTO_LIVE_UFF_TIMER_PENDING
+        assert not addon.bpy.app.timers.is_registered(addon._start_auto_live_uff)
+        settings.uff_live_auto_start = False
+    # A changed topology must never receive coordinates from an old session.
+    stopped_operator._topology_revision -= 1
+    root["blend_mol_data"] = addon._serialize_molecule(distorted)
+    stopped_operator._cancel_and_restore(addon.bpy.context)
+    assert root["blend_mol_data"] == addon._serialize_molecule(distorted)
+    assert "structure changed" in root["blend_mol_live_uff_error"]
+    root["blend_mol_data"] = initial_data
+    assert addon._update_explicit_display_geometry(root, collection, molecule, settings)
+    del root["blend_mol_live_uff_error"]
+    print("BLEND_MOL_CANCEL_RESTORE_OK", "escape", "right_click", "stale_result", "topology_guard")
     original_revision = addon._molecule_revision(root)
     moved_only = addon.Molecule(
         molecule.name,

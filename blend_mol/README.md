@@ -126,8 +126,13 @@ their atom and bond graph as a ball-and-stick model.
   Version 0.1.53 cancels pending and running work before Undo, Redo, and file
   loading. Escape and right-click also reach Blender's transform operator.
   Deferred automatic startup verifies the same atom is still selected and has
-  actually moved; calculation failures terminate the session. Full rollback of
-  surrounding atoms on transform cancellation remains pending.
+  actually moved; calculation failures terminate the session.
+  Version 0.1.54 restores all explicit atom coordinates and bond display to the
+  Live UFF session's starting snapshot on Escape or right-click, and restores
+  the previous interactive calculation log. A cancelled run cannot save a
+  success snapshot through a late timer event. This restores the session start,
+  which may precede several moves in a manually started session; it is not a
+  per-drag Undo transaction. Changed molecular topology prevents restoration.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
   UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF

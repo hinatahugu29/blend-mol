@@ -1827,6 +1827,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
     _topology_at_start = None
     _prepared_uff = None
     _initial_positions = None
+    _initial_live_log = None
     _settle_updates = 0
     _applied_results = 0
     _cancel_event = None
@@ -1835,6 +1836,39 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
 
     start_immediately: BoolProperty(options={"HIDDEN"}, default=False)
     auto_stop_when_ready: BoolProperty(options={"HIDDEN"}, default=False)
+
+    def _cancel_and_restore(self, context):
+        """Invalidate work first, then restore this session's coordinate snapshot."""
+        self._finish(context, save_session=False)
+        root = bpy.data.objects.get(self._root_name)
+        if root is None or self._initial_positions is None:
+            return
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+            if (_molecule_revision(root) != self._topology_revision
+                    or _topology_signature(molecule) != self._topology_at_start):
+                root["blend_mol_live_uff_error"] = "Cannot restore Live UFF: molecule structure changed"
+                return
+            collection = _molecule_collection(root)
+            if collection is None:
+                return
+            restored = _apply_serialized_positions(molecule, self._initial_positions)
+            # Save before display changes: transform notifications must see the
+            # restored coordinates, rather than queueing a fresh auto session.
+            root["blend_mol_data"] = _serialize_molecule(restored)
+            if not _update_explicit_display_geometry(
+                root, collection, restored, context.scene.blend_mol_settings,
+            ):
+                root["blend_mol_live_uff_error"] = "Cannot restore all Live UFF display objects"
+                return
+            if self._initial_live_log is None:
+                if "blend_mol_uff_live_last" in root:
+                    del root["blend_mol_uff_live_last"]
+            else:
+                root["blend_mol_uff_live_last"] = self._initial_live_log
+            root["blend_mol_live_uff_phase"] = "cancelled"
+        except (ArithmeticError, KeyError, RuntimeError, TypeError, ValueError) as exc:
+            root["blend_mol_live_uff_error"] = f"Live UFF restore failed: {exc}"
 
     def _submit(self, molecule, root, settings, phase="calculating"):
         if self._cancel_event is not None:
@@ -1859,6 +1893,8 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
 
     def _finish(self, context, save_session=True):
         global _LIVE_UFF_OPERATOR
+        if self._stop_requested and self._timer is None and self._worker is None:
+            return {"CANCELLED"}
         self._stop_requested = True
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
@@ -1883,6 +1919,9 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                     )
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                     pass
+        # A queued timer may finish this operator again. Never save a cancelled
+        # session (or save a completed snapshot twice) on that second call.
+        self._applied_results = 0
         if _LIVE_UFF_OPERATOR is self:
             _LIVE_UFF_OPERATOR = None
         return {"CANCELLED"}
@@ -1912,6 +1951,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         self._topology_at_start = _topology_signature(molecule)
         self._prepared_uff = prepare_uff_context(molecule)
         self._initial_positions = _serialize_positions(molecule)
+        self._initial_live_log = root.get("blend_mol_uff_live_last")
         self._settle_updates = 0
         self._applied_results = 0
         self._cancel_event = None
@@ -1941,7 +1981,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         if self._stop_requested:
             return self._finish(context)
         if event.type == "ESC" or (event.type == "RIGHTMOUSE" and event.value == "PRESS"):
-            self._finish(context)
+            self._cancel_and_restore(context)
             # Let Blender's active transform also receive its cancel event.
             return {"CANCELLED", "PASS_THROUGH"}
         if event.type != "TIMER":
