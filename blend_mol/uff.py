@@ -203,8 +203,20 @@ class UffMinimizationResult:
         return self.molecule is not None and not self.messages
 
 
-def _type_from_max_bond(element: str, max_order: int) -> str:
-    if max_order >= 3:
+def _type_from_bond_orders(element: str, bond_orders: list[int]) -> str:
+    """Hybridisation from bond orders, recognising cumulated double bonds.
+
+    A plain "highest bond order" rule mistypes a cumulated system such as
+    CO2, an isocyanate, or an allene: the central atom has two separate
+    double bonds (max order 2) but is sp-hybridised (linear, 180°), not
+    sp2. Open Babel's SMARTS-based typing reaches the same conclusion from
+    real computed hybridisation; this is the bond-order equivalent for an
+    atom with two or more order-2 bonds.
+    """
+
+    max_order = max(bond_orders, default=1)
+    double_bond_count = sum(1 for order in bond_orders if order == 2)
+    if max_order >= 3 or double_bond_count >= 2:
         return f"{element}_1"
     if max_order == 2:
         return f"{element}_2"
@@ -241,11 +253,11 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
             elif degree == 2:
                 atom_type = "H_b"
         elif atom.element == "C" and atom.formal_charge == 0:
-            atom_type = _type_from_max_bond("C", max_order)
+            atom_type = _type_from_bond_orders("C", bond_orders)
         elif atom.element == "N" and -1 <= atom.formal_charge <= 1:
-            atom_type = _type_from_max_bond("N", max_order)
+            atom_type = _type_from_bond_orders("N", bond_orders)
         elif atom.element == "O" and -1 <= atom.formal_charge <= 1:
-            atom_type = _type_from_max_bond("O", max_order)
+            atom_type = _type_from_bond_orders("O", bond_orders)
         elif atom.element == "F" and atom.formal_charge == 0 and degree <= 1:
             atom_type = "F_"
         elif atom.element == "P" and atom.formal_charge == 0 and degree <= 3 and max_order == 1:

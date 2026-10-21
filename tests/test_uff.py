@@ -567,6 +567,63 @@ class TestUffTyping(unittest.TestCase):
             self.assertEqual(energy.terms, 4)
             self.assertTrue(math.isfinite(energy.energy_kcal_mol))
 
+    def test_cumulated_double_bonds_type_as_sp_not_sp2(self):
+        # A plain "highest bond order" rule would type CO2's carbon sp2
+        # (max order 2), which linearizes to a 120 degree bend instead of
+        # the correct 180 degree linear sp geometry. UFF/Open Babel reach
+        # sp here because the carbon carries two separate double bonds.
+        carbon_dioxide = Molecule(
+            "CO2",
+            (
+                Atom("C", (0.0, 0.0, 0.0)),
+                Atom("O", (1.3, 0.2, 0.0)),
+                Atom("O", (-1.2, -0.3, 0.1)),
+            ),
+            (Bond(0, 1, 2), Bond(0, 2, 2)),
+        )
+        typing = type_molecule(carbon_dioxide)
+        self.assertTrue(typing.ready)
+        self.assertEqual(typing.types[0], "C_1")
+
+        result = minimize_partial_energy(carbon_dioxide, 60, 0.05, frozenset())
+        self.assertTrue(result.ready, result.messages)
+        final = result.molecule
+        center, outer_a, outer_b = (atom.position for atom in final.atoms)
+        first = tuple(a - c for a, c in zip(outer_a, center))
+        second = tuple(b - c for b, c in zip(outer_b, center))
+        dot = sum(a * b for a, b in zip(first, second))
+        length_a = math.sqrt(sum(a * a for a in first))
+        length_b = math.sqrt(sum(b * b for b in second))
+        angle = math.degrees(math.acos(max(-1.0, min(1.0, dot / (length_a * length_b)))))
+        self.assertGreater(angle, 175.0)
+
+        # An allene-style cumulated C=C=C centre must type the same way.
+        allene = Molecule(
+            "allene",
+            (
+                Atom("C", (0.0, 0.0, 0.0)),
+                Atom("C", (1.3, 0.0, 0.0)),
+                Atom("C", (-1.3, 0.0, 0.0)),
+            ),
+            (Bond(0, 1, 2), Bond(0, 2, 2)),
+        )
+        self.assertEqual(type_molecule(allene).types[0], "C_1")
+
+        # A single, non-cumulated double bond must still type sp2 (e.g. the
+        # carbonyl carbon in formaldehyde), so this fix must not regress the
+        # common case by over-triggering on any order-2 bond.
+        formaldehyde = Molecule(
+            "CH2O",
+            (
+                Atom("C", (0.0, 0.0, 0.0)),
+                Atom("O", (1.2, 0.0, 0.0)),
+                Atom("H", (-0.5, 0.9, 0.0)),
+                Atom("H", (-0.5, -0.9, 0.0)),
+            ),
+            (Bond(0, 1, 2), Bond(0, 2, 1), Bond(0, 3, 1)),
+        )
+        self.assertEqual(type_molecule(formaldehyde).types[0], "C_R")
+
     def test_types_triphenylene_without_external_dependencies(self):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
 

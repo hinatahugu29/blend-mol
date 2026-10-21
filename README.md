@@ -31,7 +31,11 @@ against. Version 0.1.57 fixes the UFF electronegativity parameter for
 chlorine, bromine, and iodine, which held the published table's hardness
 column instead, shifting equilibrium bond lengths for carbon/nitrogen/
 oxygen-halogen bonds; it is cross-checked against Open Babel 3.1.1's own
-UFF parameter table in an automated regression test.
+UFF parameter table in an automated regression test. Version 0.1.58 fixes
+atom typing for cumulated double-bond systems (CO2, ketenes, allenes,
+isocyanates): the central carbon/nitrogen previously typed sp2 from its
+highest bond order alone, bending to about 120° instead of the correct
+180° linear sp geometry, which a user noticed in a live UFF minimization.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
