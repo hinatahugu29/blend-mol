@@ -15,8 +15,8 @@ addon = importlib.import_module("blend_mol")
 from blend_mol.live_worker import LatestOnlyWorker, adapt_chunk_iterations
 from blend_mol.molfile import read_v2000
 from blend_mol.uff import (
-    _gradient_step_metrics, _uff_angle_energy, minimize_partial_energy, out_of_plane_energy, partial_energy,
-    partial_objective_energy_gradient,
+    _ENERGY_TOLERANCE_STREAK, _gradient_step_metrics, _uff_angle_energy, minimize_partial_energy,
+    out_of_plane_energy, partial_energy, partial_objective_energy_gradient,
     prepare_uff_context,
 )
 
@@ -233,7 +233,10 @@ try:
         molecule, 5, 0.02, prepared=prepared, energy_tolerance=1e20
     )
     assert energy_tolerance_result.termination == "energy tolerance"
-    assert energy_tolerance_result.iterations == 1
+    # A huge tolerance makes every step trivially satisfy it, but a single such
+    # step is not trusted as real convergence -- it takes _ENERGY_TOLERANCE_STREAK
+    # consecutive steps under tolerance.
+    assert energy_tolerance_result.iterations == _ENERGY_TOLERANCE_STREAK
     cancelled_result = minimize_partial_energy(
         molecule, 50, 0.02, prepared=prepared, cancelled=lambda: True
     )
