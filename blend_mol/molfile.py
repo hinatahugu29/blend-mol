@@ -35,12 +35,41 @@ TYPICAL_VALENCE = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl":
 
 
 def _target_valence(atom: Atom) -> int | None:
-    """Common valence rule shared by SMILES Kekulization and GUI validation."""
+    """Typical, neutral-state valence used for implicit hydrogen counts.
+
+    Deliberately not the ceiling used to flag an over-valence error: sulfur
+    and phosphorus routinely exceed this in legitimate hypervalent groups
+    (sulfoxide/sulfone/sulfonamide, phosphate/phosphonate), but adding
+    implicit hydrogens there would be wrong, not just conservative, so
+    callers that place hydrogens keep using this value (its excess is
+    already clamped to zero, never negative). Use _max_legitimate_valence
+    for anything that reports or rejects an apparent valence violation.
+    """
     if atom.element == "N" and atom.formal_charge > 0:
         return 4
     if atom.element == "O" and atom.formal_charge < 0:
         return 1
     return TYPICAL_VALENCE.get(atom.element)
+
+
+# Highest bond-order sum sulfur/phosphorus can legitimately reach in common
+# neutral hypervalent groups (sulfoxide/sulfone/sulfonamide for S=4/6;
+# phosphate/phosphonate/phosphine oxide for P=5), via expanded-octet bonding
+# that _target_valence's typical/neutral value does not represent.
+_HYPERVALENT_CEILING = {"S": 6, "P": 5}
+
+
+def _max_legitimate_valence(atom: Atom) -> int | None:
+    """Upper bound for flagging a genuine over-valence error.
+
+    Matches _target_valence everywhere except sulfur and phosphorus, where
+    it allows common hypervalent oxidation states instead of flagging them
+    as errors.
+    """
+    typical = _target_valence(atom)
+    if typical is None:
+        return None
+    return max(typical, _HYPERVALENT_CEILING.get(atom.element, typical))
 
 
 class MolfileError(ValueError):
@@ -309,8 +338,8 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
         # the ring and must keep both ring bonds single in any valid Kekule
         # structure -- promoting either one here would push it a bond order
         # over its valence (e.g. a trisubstituted neutral N already at 3).
-        target_a = _target_valence(atoms[bond.atom_a])
-        target_b = _target_valence(atoms[bond.atom_b])
+        target_a = _max_legitimate_valence(atoms[bond.atom_a])
+        target_b = _max_legitimate_valence(atoms[bond.atom_b])
         if (
             (target_a is not None and bond_order_sum[bond.atom_a] + 1 > target_a)
             or (target_b is not None and bond_order_sum[bond.atom_b] + 1 > target_b)

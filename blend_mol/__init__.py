@@ -25,7 +25,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
 from .molfile import (
-    Atom, Bond, Molecule, MolfileError, TYPICAL_VALENCE, _target_valence,
+    Atom, Bond, Molecule, MolfileError, TYPICAL_VALENCE, _max_legitimate_valence, _target_valence,
     read_pdb, read_sdf, read_smiles, read_v2000, read_xyz,
     write_pdb, write_sdf, write_v2000, write_xyz,
 )
@@ -595,7 +595,7 @@ def _molecule_validation_messages(molecule: Molecule) -> list[str]:
         bond_order_sum[bond.atom_a] += bond.order
         bond_order_sum[bond.atom_b] += bond.order
     for index, atom in enumerate(molecule.atoms):
-        valence = _target_valence(atom)
+        valence = _max_legitimate_valence(atom)
         if valence is None:
             messages.append(f"Atom {index + 1} ({atom.element}) has no valence rule")
         elif bond_order_sum[index] > valence:
@@ -617,7 +617,7 @@ def _bond_edit_valence_error(original: Molecule, updated: Molecule, indices) -> 
 
     for index in indices:
         atom = updated.atoms[index]
-        target = _target_valence(atom)
+        target = _max_legitimate_valence(atom)
         total = bond_order_sum(updated, index)
         previous = bond_order_sum(original, index) if index < len(original.atoms) else 0
         if target is not None and total > target and total > previous:

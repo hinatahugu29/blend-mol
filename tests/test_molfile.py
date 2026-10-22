@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "blend_mol"))
 from molfile import (
-    Atom, Bond, Molecule, MolfileError, _target_valence,
+    Atom, Bond, Molecule, MolfileError, _max_legitimate_valence, _target_valence,
     read_pdb, read_sdf, read_smiles, read_v2000, read_xyz,
     write_pdb, write_sdf, write_v2000, write_xyz,
 )
@@ -192,6 +192,38 @@ class TestTriphenyleneMolfile(unittest.TestCase):
             bond_order_sum[index] for index, atom in enumerate(caffeine.atoms) if atom.element == "N"
         ]
         self.assertEqual(nitrogen_sums, [3, 3, 3, 3])
+
+    def test_hypervalent_sulfur_and_phosphorus_are_not_flagged_as_over_valence(self):
+        # Sulfoxide/sulfone/sulfonamide sulfur and phosphate/phosphonate
+        # phosphorus routinely exceed _target_valence's typical, neutral-state
+        # value (used for implicit hydrogen counts) through legitimate
+        # expanded-octet bonding. _max_legitimate_valence is the ceiling that
+        # should actually gate an over-valence warning/rejection.
+        cases = {
+            "dimethyl sulfone": "CS(=O)(=O)C",
+            "DMSO": "CS(=O)C",
+            "phosphoric acid": "OP(=O)(O)O",
+            "sulfonamide": "CS(=O)(=O)N",
+            "sulfonic acid": "CS(=O)(=O)O",
+        }
+        for name, smiles in cases.items():
+            with self.subTest(name=name):
+                molecule = read_smiles(smiles, name)
+                bond_order_sum = [0] * len(molecule.atoms)
+                for bond in molecule.bonds:
+                    bond_order_sum[bond.atom_a] += bond.order
+                    bond_order_sum[bond.atom_b] += bond.order
+                for index, atom in enumerate(molecule.atoms):
+                    if atom.element not in ("S", "P"):
+                        continue
+                    self.assertLessEqual(
+                        bond_order_sum[index], _max_legitimate_valence(atom),
+                        f"{name}: atom {index} ({atom.element}) falsely over valence",
+                    )
+        # A genuinely impossible sulfur (more connections than any real
+        # oxidation state allows) must still be flagged.
+        overbonded_sulfur = Atom("S", (0.0, 0.0, 0.0))
+        self.assertEqual(_max_legitimate_valence(overbonded_sulfur), 6)
 
     def test_preserves_tetrahedral_smiles_stereochemistry_in_3d_layout(self):
         clockwise = read_smiles("N[C@H](C)C(=O)O")
