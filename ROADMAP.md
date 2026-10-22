@@ -298,6 +298,8 @@ UFF は Blend Mol 内へ実装し、Open Babel の導入を必須にしない。
 - [x] Avogadro EnergyOptimizerを参考にFIRE2を独立実装し、従来の後退探索方式とUIで切り替え
 - [x] FIRE2の速度・時間刻み・混合率・正方向反復数をLive UFFチャンク間で保持し、原子の再移動時に安全に初期化
 - [x] 履歴7組のL-BFGSを追加し、履歴をLive UFFチャンク間で継続、固定原子・中断・不整合履歴の初期化を検証
+- [x] 0.1.67: エネルギー許容値判定を1ステップから3ステップ連続判定へ変更し、
+  Live UFFがsettle中に偽の収束を報告して早期停止する問題を修正（詳細は後述）
 
 ### 2026-10-21 最適化方式の比較
 
@@ -457,3 +459,25 @@ Avogadro 2.0.0同梱のOpen Babel 3 UFFを、同じ明示水素付きトリフ�
 双方を500ステップ最適化した構造は、剛体移動・回転に依存しない全原子間距離RMSで
 `0.000241 Å`、結合長RMSで`0.000194 Å`の差だった。外部比較は
 `benchmarks/compare_avogadro_uff.py`で再実行できる。
+
+### 2026-10-22: 0.1.67 Live UFF「偽の収束」修正
+
+Start Live UFFが停止した直後でも、続けてMinimize Partial UFFや
+Relax Around Selected Atomを実行するとまだ原子が動く、というユーザー報告を
+調査した。原因はLBFGS/FIRE2/最急降下すべてに共通する、エネルギー許容値
+（`energy_tolerance`）判定が**1ステップのエネルギー変化だけ**で収束と
+判定していたこと。Live UFFは応答性確保のため1〜10ステップの小さなチャンクで
+反復するので、ライン探索の後退などで偶然1歩が小さくなっただけで、勾配
+（`gradient_tolerance`）がまだ全く収束していないのに「収束済み」として
+`should_continue_relaxation`がsettleループを止めてしまっていた。
+
+`_ENERGY_TOLERANCE_STREAK`（3）を導入し、3ステップ連続でエネルギー許容値を
+満たした場合のみ収束と判定するよう3方式すべてを修正。依存なしテスト56件、
+Steam版Blender 5.2.2でのヘッドレススモーク5種
+（`smoke_blender_live_uff_gesture.py`、`smoke_blender_crud_lifecycle.py`、
+`smoke_blender_panel_draw.py`、`smoke_blender_bond_valence.py`、
+`smoke_blender_background_worker.py`）と`validate_distribution.py`（0.1.67の
+ZIP自体の検証）をすべて再実行し通過を確認した。`smoke_blender_background_worker.py`
+に残っていた旧挙動（1ステップで収束）を前提にしたアサーションも同時に修正。
+実際のドラッグ操作の感触（本当に「スッと止まる」か）は実機GUIでの確認が
+別途必要。
