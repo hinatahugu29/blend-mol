@@ -31,6 +31,18 @@ class Molecule:
     bonds: tuple[Bond, ...]
 
 
+TYPICAL_VALENCE = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
+
+
+def _target_valence(atom: Atom) -> int | None:
+    """Common valence rule shared by SMILES Kekulization and GUI validation."""
+    if atom.element == "N" and atom.formal_charge > 0:
+        return 4
+    if atom.element == "O" and atom.formal_charge < 0:
+        return 1
+    return TYPICAL_VALENCE.get(atom.element)
+
+
 class MolfileError(ValueError):
     """Raised when a file is not a supported V2000 Molfile."""
 
@@ -281,11 +293,33 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
         for bond in bonds if bond.order == 2
         for atom_index in (bond.atom_a, bond.atom_b)
     }
+    # Every aromatic bond still holds its unpromoted order (1) here, so this
+    # sum is each atom's current sigma-bond count before any of them gets a
+    # Kekule double bond.
+    bond_order_sum = [0] * len(atoms)
+    for bond in bonds:
+        bond_order_sum[bond.atom_a] += bond.order
+        bond_order_sum[bond.atom_b] += bond.order
     for bond_index in aromatic_bond_indices:
         bond = bonds[bond_index]
-        if bond.atom_a not in double_bonded_atoms and bond.atom_b not in double_bonded_atoms:
-            bonds[bond_index] = Bond(bond.atom_a, bond.atom_b, 2, bond.stereo)
-            double_bonded_atoms.update((bond.atom_a, bond.atom_b))
+        if bond.atom_a in double_bonded_atoms or bond.atom_b in double_bonded_atoms:
+            continue
+        # A 3-substituted aromatic atom (e.g. a pyrrole/purine-style nitrogen
+        # bearing a ring-exocyclic substituent) donates its lone pair into
+        # the ring and must keep both ring bonds single in any valid Kekule
+        # structure -- promoting either one here would push it a bond order
+        # over its valence (e.g. a trisubstituted neutral N already at 3).
+        target_a = _target_valence(atoms[bond.atom_a])
+        target_b = _target_valence(atoms[bond.atom_b])
+        if (
+            (target_a is not None and bond_order_sum[bond.atom_a] + 1 > target_a)
+            or (target_b is not None and bond_order_sum[bond.atom_b] + 1 > target_b)
+        ):
+            continue
+        bonds[bond_index] = Bond(bond.atom_a, bond.atom_b, 2, bond.stereo)
+        double_bonded_atoms.update((bond.atom_a, bond.atom_b))
+        bond_order_sum[bond.atom_a] += 1
+        bond_order_sum[bond.atom_b] += 1
     positions = _smiles_layout(len(atoms), bonds, [atom.chirality for atom in atoms])
     return Molecule(
         name,

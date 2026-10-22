@@ -24,7 +24,11 @@ from bpy.props import (
 from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
-from .molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_sdf, write_v2000, write_xyz
+from .molfile import (
+    Atom, Bond, Molecule, MolfileError, TYPICAL_VALENCE, _target_valence,
+    read_pdb, read_sdf, read_smiles, read_v2000, read_xyz,
+    write_pdb, write_sdf, write_v2000, write_xyz,
+)
 from .uff import (
     _dihedral_angle, _gradient_step_metrics, angle_bend_energy, bond_stretch_energy,
     minimize_partial_energy, numeric_gradient_atom_indices, out_of_plane_energy, partial_energy,
@@ -50,7 +54,6 @@ ELEMENT_COLORS = {
 ELEMENT_RADII = {"H": 0.22, "C": 0.34, "N": 0.33, "O": 0.31, "P": 0.38, "S": 0.38}
 COVALENT_RADII = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66, "P": 1.07, "S": 1.05,
                    "F": 0.57, "Cl": 1.02, "Br": 1.20, "I": 1.39}
-TYPICAL_VALENCE = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
 ELEMENT_ITEMS = tuple((element, element, "") for element in ELEMENT_COLORS)
 
 
@@ -182,15 +185,6 @@ def _palette_item(settings: BlendMolSettings, element: str) -> BlendMolElementCo
 
 def _element_color(settings: BlendMolSettings, element: str) -> tuple[float, float, float, float]:
     return tuple(_palette_item(settings, element).color)
-
-
-def _target_valence(atom: Atom) -> int | None:
-    """Common valence rule used for implicit hydrogens and basic validation."""
-    if atom.element == "N" and atom.formal_charge > 0:
-        return 4
-    if atom.element == "O" and atom.formal_charge < 0:
-        return 1
-    return TYPICAL_VALENCE.get(atom.element)
 
 
 def _managed_atom_elements() -> dict[str, int]:

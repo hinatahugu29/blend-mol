@@ -5,7 +5,11 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "blend_mol"))
-from molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_sdf, write_v2000, write_xyz
+from molfile import (
+    Atom, Bond, Molecule, MolfileError, _target_valence,
+    read_pdb, read_sdf, read_smiles, read_v2000, read_xyz,
+    write_pdb, write_sdf, write_v2000, write_xyz,
+)
 
 
 class TestTriphenyleneMolfile(unittest.TestCase):
@@ -164,6 +168,30 @@ class TestTriphenyleneMolfile(unittest.TestCase):
         self.assertEqual(len(benzene.bonds), 6)
         self.assertEqual(pyridine.atoms[0].element, "N")
         self.assertEqual(sum(atom.element == "H" for atom in pyrrole.atoms), 1)
+
+    def test_fused_ring_kekulization_keeps_trisubstituted_aromatic_n_trivalent(self):
+        # Caffeine: each ring nitrogen bonded to a methyl plus two ring bonds
+        # donates its lone pair into the aromatic system, so both of its ring
+        # bonds must stay single in any valid Kekule structure. A naive
+        # Kekulization that ignores valence when picking which aromatic bond
+        # to promote to a double bond can push one of these nitrogens to
+        # bond order 4, one above its valence of 3.
+        caffeine = read_smiles("Cn1cnc2c1c(=O)n(c(=O)n2C)C", "Caffeine")
+        bond_order_sum = [0] * len(caffeine.atoms)
+        for bond in caffeine.bonds:
+            bond_order_sum[bond.atom_a] += bond.order
+            bond_order_sum[bond.atom_b] += bond.order
+        for index, atom in enumerate(caffeine.atoms):
+            target = _target_valence(atom)
+            if target is not None:
+                self.assertLessEqual(
+                    bond_order_sum[index], target,
+                    f"atom {index} ({atom.element}) exceeds its valence after Kekulization",
+                )
+        nitrogen_sums = [
+            bond_order_sum[index] for index, atom in enumerate(caffeine.atoms) if atom.element == "N"
+        ]
+        self.assertEqual(nitrogen_sums, [3, 3, 3, 3])
 
     def test_preserves_tetrahedral_smiles_stereochemistry_in_3d_layout(self):
         clockwise = read_smiles("N[C@H](C)C(=O)O")
