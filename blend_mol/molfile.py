@@ -197,19 +197,31 @@ def _smiles_layout(
     # chain -- confirmed by reproducing exactly that on
     # "OC[C@@H]1OC(O)[C@H](O)[C@@H](O)[C@H]1O" before this fix.
     reference = [tuple(position) for position in centered]
-    # Two adjacent stereocenters in a ring or chain commonly share one
-    # neighbour (each treats the other as one of its own four substituents).
-    # Overwriting that neighbour's position outright for whichever center is
-    # processed last can leave it far from where the *other* center's
-    # equally-valid placement put it -- observed as non-bonded atoms left
-    # within 0.3 Angstrom of each other on both an open-chain polyol
-    # (C[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)C) and beta-glucose
-    # (OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O), driving the initial UFF
-    # energy into the billions of kcal/mol even after the sweep above fixed
-    # the far worse multi-Angstrom bond stretch. Averaging a repeated claim
-    # with the existing placement, instead of overwriting it, keeps the
-    # shared atom roughly consistent with both centers' tetrahedra.
-    claims = [0] * atom_count
+    # Two bonded stereocenters are mutually a "neighbour to place" for each
+    # other, but each is also the fixed anchor the *other* substituents it
+    # placed were positioned relative to. Letting one center's placement
+    # overwrite the other's own position, after already using that other
+    # center's original position to place a third atom, breaks the very
+    # relationship that third atom's placement depended on -- a real and
+    # distinct conflict from two centers merely sharing one ordinary
+    # neighbour. Confirmed directly on beta-glucose
+    # (OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O): atoms 4 and 6 are both
+    # stereocenters bonded to each other; atom 6 overwrote atom 4's position
+    # after atom 3 had already been placed relative to atom 4's *original*
+    # spot, landing atom 3 and atom 6 almost exactly on top of each other.
+    # Never repositioning a stereocenter via another center's placement
+    # avoids this; each center's own position always stays whatever the
+    # initial relaxation (or, later, the xy-only repair pass) gave it.
+    #
+    # An *ordinary* (non-stereocenter) neighbour can still legitimately be
+    # claimed by two different adjacent centers -- the common case for a
+    # ring or chain oxygen between two stereocenters -- so those proposals
+    # are collected and averaged together, rather than letting whichever
+    # center is processed last overwrite the other's equally valid
+    # placement (and rather than a running pairwise average, which would
+    # silently over-weight later entries if three or more centers ever
+    # shared one neighbour).
+    proposals: list[list[list[float]]] = [[] for _ in range(atom_count)]
     for center_index, chirality in enumerate(chiralities):
         if chirality is None or len(neighbors[center_index]) < 3:
             continue
@@ -219,14 +231,18 @@ def _smiles_layout(
             vectors[0], vectors[1] = vectors[1], vectors[0]
         center = reference[center_index]
         for neighbor_index, vector in zip(ordered_neighbors, vectors):
-            placement = [center[axis] + vector[axis] * scale for axis in range(3)]
-            if claims[neighbor_index] == 0:
-                centered[neighbor_index] = placement
-            else:
-                centered[neighbor_index] = [
-                    (centered[neighbor_index][axis] + placement[axis]) / 2.0 for axis in range(3)
-                ]
-            claims[neighbor_index] += 1
+            if chiralities[neighbor_index] is not None:
+                continue
+            proposals[neighbor_index].append(
+                [center[axis] + vector[axis] * scale for axis in range(3)]
+            )
+    for neighbor_index, placements in enumerate(proposals):
+        if not placements:
+            continue
+        centered[neighbor_index] = [
+            sum(placement[axis] for placement in placements) / len(placements)
+            for axis in range(3)
+        ]
     # Directional markers on the two single bonds around a double bond encode
     # whether its substituents begin on opposite or matching sides.
     for double_bond in (bond for bond in bonds if bond.order == 2):

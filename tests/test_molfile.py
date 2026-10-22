@@ -277,25 +277,45 @@ class TestTriphenyleneMolfile(unittest.TestCase):
                     f"atoms {first} and {second} are {distance:.4f} Å apart, should never coincide",
                 )
 
+    @staticmethod
+    def _min_nonbonded_distance(molecule):
+        bonded_pairs = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in molecule.bonds}
+        closest = None
+        for first in range(len(molecule.atoms)):
+            for second in range(first + 1, len(molecule.atoms)):
+                if (first, second) in bonded_pairs:
+                    continue
+                distance = math.dist(molecule.atoms[first].position, molecule.atoms[second].position)
+                if closest is None or distance < closest:
+                    closest = distance
+        return closest
+
     def test_chain_adjacent_stereocenters_average_a_shared_neighbour(self):
         # Lateral follow-up to the ring-adjacent-stereocenter fix above: an
         # open chain of adjacent stereocenters shares a neighbour between
-        # consecutive centers the same way a ring does. Before averaging a
-        # repeated claim on a shared atom (instead of letting the later
-        # stereocenter overwrite it outright), this open-chain polyol left
-        # two non-bonded atoms only 0.3 Å apart; the fix brings that up to
-        # roughly 1.5 Å.
+        # consecutive centers the same way a ring does. Averaging a repeated
+        # claim on a shared *non-stereocenter* atom, instead of letting the
+        # later stereocenter overwrite it outright, brings the closest
+        # non-bonded pair in this open-chain polyol from 0.3 to roughly 2 Å.
         chain = read_smiles("C[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)C", "polyol")
-        min_nonbonded = None
-        bonded_pairs = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in chain.bonds}
-        for first in range(len(chain.atoms)):
-            for second in range(first + 1, len(chain.atoms)):
-                if (first, second) in bonded_pairs:
-                    continue
-                distance = math.dist(chain.atoms[first].position, chain.atoms[second].position)
-                if min_nonbonded is None or distance < min_nonbonded:
-                    min_nonbonded = distance
-        self.assertGreater(min_nonbonded, 1.0)
+        self.assertGreater(self._min_nonbonded_distance(chain), 1.5)
+
+    def test_two_bonded_stereocenters_never_reposition_each_other(self):
+        # Two bonded stereocenters are mutually "a neighbour to place" for
+        # each other, but each is also the fixed anchor its *other*
+        # substituents were positioned relative to; letting one overwrite
+        # the other's position broke that relationship for a third atom
+        # placed earlier. Reproduced directly on beta-glucose, where it left
+        # two atoms only 0.3 Å apart even after the shared-neighbour
+        # averaging fix above; never repositioning a stereocenter via
+        # another center's placement brings it up to roughly 1.4 Å.
+        beta_glucose = read_smiles("OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O", "beta-glucose")
+        self.assertGreater(self._min_nonbonded_distance(beta_glucose), 1.0)
+        for bond in beta_glucose.bonds:
+            distance = math.dist(
+                beta_glucose.atoms[bond.atom_a].position, beta_glucose.atoms[bond.atom_b].position,
+            )
+            self.assertLess(distance, 1.6, f"bond {bond.atom_a}-{bond.atom_b} is {distance:.3f} Å")
 
     def test_preserves_directional_double_bond_stereochemistry(self):
         opposite = read_smiles("F/C=C/F")

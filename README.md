@@ -75,7 +75,13 @@ rings, and chain/ring stereocenter molecules; fixes adjacent stereocenters
 overwriting a shared neighbour instead of averaging it (open-chain polyols
 went from 0.3 Å to ~1.5 Å between the closest non-bonded atoms); and
 records a remaining, non-crashing close-contact limit for rings with 3+
-mutually adjacent stereocenters (e.g. beta-glucose) in ROADMAP.md.
+mutually adjacent stereocenters (e.g. beta-glucose) in ROADMAP.md. Version
+0.1.74 resolves that limit: two bonded stereocenters were each treating the
+other as "a neighbour to place," so one center's placement could move the
+exact anchor point a third atom had already been positioned relative to.
+Stereocenters no longer reposition each other; beta-glucose's closest
+non-bonded distance goes from 0.3 to ~1.4 Å, and its partial UFF starting
+energy drops by three orders of magnitude.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
