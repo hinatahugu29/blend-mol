@@ -1,4 +1,5 @@
 import unittest
+import math
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -247,6 +248,34 @@ class TestTriphenyleneMolfile(unittest.TestCase):
             )
 
         self.assertLess(signed_volume(clockwise) * signed_volume(anticlockwise), 0.0)
+
+    def test_ring_adjacent_stereocenters_do_not_compound_bond_length_drift(self):
+        # Each tetrahedral stereocenter in _smiles_layout repositions its own
+        # neighbours onto a fixed tetrahedron. Reading a later stereocenter's
+        # *own* position from `centered` (already mutated by an earlier,
+        # adjacent stereocenter) let a ring of several adjacent stereocenters
+        # compound a small per-centre offset into a multi-Angstrom bond
+        # stretch after a few links in the chain. A pyranose sugar (every
+        # ring carbon a stereocenter) reproduced this: before the fix, some
+        # bonds stretched past 4 Angstrom, bad enough that a UFF
+        # minimization starting from it hit a genuine collinear-angle
+        # singularity rather than just converging slowly.
+        sugar = read_smiles("OC[C@@H]1OC(O)[C@H](O)[C@@H](O)[C@H]1O", "sugar")
+        for bond in sugar.bonds:
+            distance = math.dist(
+                sugar.atoms[bond.atom_a].position, sugar.atoms[bond.atom_b].position,
+            )
+            self.assertLess(
+                distance, 2.0,
+                f"bond {bond.atom_a}-{bond.atom_b} is {distance:.3f} Å, should be close to 1.45 Å",
+            )
+        for first in range(len(sugar.atoms)):
+            for second in range(first + 1, len(sugar.atoms)):
+                distance = math.dist(sugar.atoms[first].position, sugar.atoms[second].position)
+                self.assertGreater(
+                    distance, 0.1,
+                    f"atoms {first} and {second} are {distance:.4f} Å apart, should never coincide",
+                )
 
     def test_preserves_directional_double_bond_stereochemistry(self):
         opposite = read_smiles("F/C=C/F")

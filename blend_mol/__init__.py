@@ -335,9 +335,19 @@ def _implicit_hydrogens(molecule: Molecule) -> list[tuple[int, Vector]]:
                 Vector((-1.0, 1.0, -1.0)).normalized(),
                 Vector((-1.0, -1.0, 1.0)).normalized(),
             )
-        elif count == 3 and len(neighbors[atom_index]) == 1:
-            # Arrange the three hydrogens tetrahedrally around the bond.  The
-            # previous planar fan could produce collinear H-C-C-H torsions.
+        elif count in (1, 2, 3) and len(neighbors[atom_index]) == 1:
+            # Arrange the missing hydrogen(s) tetrahedrally around the bond,
+            # not along `direction` itself (exactly opposite the one existing
+            # bond). For count == 3 the previous planar fan could produce
+            # collinear H-C-C-H torsions; for count == 1 or 2 (e.g. any -OH,
+            # -SH, or secondary-amine -NH- missing its last hydrogen)
+            # `direction` unmodified placed the hydrogen exactly 180 degrees
+            # from the parent bond. That is a genuine (non-removable)
+            # collinear singularity for any non-linear parent type -- O_3's
+            # own ~104.5 degree bend is nowhere near 180 -- and UFF's angle
+            # gradient correctly refuses to evaluate it, reported as "UFF:
+            # collinear atoms have no stable angle gradient". Reproduced on
+            # every -OH in a SMILES-imported sugar ring.
             reference = Vector((0.0, 0.0, 1.0))
             if abs(direction.dot(reference)) > 0.9:
                 reference = Vector((0.0, 1.0, 0.0))
@@ -346,9 +356,9 @@ def _implicit_hydrogens(molecule: Molecule) -> list[tuple[int, Vector]]:
             axial = 1.0 / 3.0
             radial = math.sqrt(1.0 - axial ** 2)
             directions = tuple(
-                (direction * axial + first_axis * (radial * math.cos(2 * math.pi * index / 3))
-                 + second_axis * (radial * math.sin(2 * math.pi * index / 3))).normalized()
-                for index in range(3)
+                (direction * axial + first_axis * (radial * math.cos(2 * math.pi * index / count))
+                 + second_axis * (radial * math.sin(2 * math.pi * index / count))).normalized()
+                for index in range(count)
             )
         else:
             directions = tuple(

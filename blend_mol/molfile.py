@@ -80,24 +80,30 @@ _SMILES_ELEMENTS = {"B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"}
 _SMILES_AROMATIC = {"b": "B", "c": "C", "n": "N", "o": "O", "p": "P", "s": "S"}
 
 
-def _smiles_layout(
-    atom_count: int, bonds: list[Bond], chiralities: list[str | None],
-) -> list[tuple[float, float, float]]:
-    """Create a modest 2D starting layout; it is intentionally not a conformer generator."""
-    if atom_count == 1:
-        return [(0.0, 0.0, 0.0)]
-    positions = [
-        [1.45 * index, 0.35 * math.sin(index * 2.4), 0.0]
-        for index in range(atom_count)
-    ]
-    bonded = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in bonds}
-    for _iteration in range(80):
+def _relax_xy(
+    positions: list[list[float]], atom_count: int,
+    bonded: set[tuple[int, int]], iterations: int = 80,
+) -> None:
+    """Push bonded pairs toward 1.45 Å and non-bonded close pairs apart, in place.
+
+    The force magnitude is computed from the full 3D distance (so an
+    existing z offset, e.g. a tetrahedral stereocenter's out-of-plane
+    component, is correctly accounted for instead of double-counted), but
+    only positions[i][0]/[1] are moved. A caller that has already set a
+    meaningful z can call this afterwards to repair bond lengths without
+    disturbing it; for an all-z=0 starting layout this reduces to a plain
+    2D relaxation, since dz is always 0 there.
+    """
+    for _iteration in range(iterations):
         forces = [[0.0, 0.0] for _index in positions]
         for first in range(atom_count):
             for second in range(first + 1, atom_count):
-                dx, dy = positions[second][0] - positions[first][0], positions[second][1] - positions[first][1]
-                distance = max(math.hypot(dx, dy), 0.001)
-                ux, uy = dx / distance, dy / distance
+                dx = positions[second][0] - positions[first][0]
+                dy = positions[second][1] - positions[first][1]
+                dz = positions[second][2] - positions[first][2]
+                planar_distance = max(math.hypot(dx, dy), 0.001)
+                distance = max(math.sqrt(dx * dx + dy * dy + dz * dz), 0.001)
+                ux, uy = dx / planar_distance, dy / planar_distance
                 if (first, second) in bonded:
                     magnitude = (distance - 1.45) * 0.16
                 elif distance < 2.0:
@@ -111,6 +117,65 @@ def _smiles_layout(
         for index, position in enumerate(positions):
             position[0] += max(-0.10, min(0.10, forces[index][0]))
             position[1] += max(-0.10, min(0.10, forces[index][1]))
+
+
+def _snap_bond_lengths_xy(
+    positions: list[list[float]], bonds: list[Bond], target: float = 1.45, sweeps: int = 30,
+) -> None:
+    """Directly pull each bonded pair's xy separation toward ``target``.
+
+    The force-directed relaxation in _relax_xy can settle into a stable
+    local equilibrium where a bond stays stretched because the pull toward
+    its ideal length is balanced by repulsion from nearby non-bonded atoms
+    (observed on a pyranose sugar SMILES with several ring-adjacent
+    stereocenters: two bonds stayed stuck around 2.5 Å even after 1200
+    iterations). This applies a direct geometric correction instead of more
+    force iterations: each sweep moves both ends of every bond halfway
+    toward the target 3D distance (via an xy-only adjustment, since z holds
+    tetrahedral stereo information), with later sweeps re-correcting bonds
+    disturbed by an earlier bond sharing one of their atoms. It intentionally
+    does not resolve non-bonded overlaps this can introduce -- a real UFF
+    minimization is far better suited to that than another ad hoc force term
+    here, and this only runs when relaxation left a bond significantly
+    wrong, not as the general-purpose layout step.
+    """
+    for _sweep in range(sweeps):
+        moved = False
+        for bond in bonds:
+            first, second = positions[bond.atom_a], positions[bond.atom_b]
+            dx, dy, dz = second[0] - first[0], second[1] - first[1], second[2] - first[2]
+            distance = max(math.sqrt(dx * dx + dy * dy + dz * dz), 0.001)
+            if abs(distance - target) < 0.05:
+                continue
+            moved = True
+            planar_distance = max(math.hypot(dx, dy), 0.001)
+            # Solve for the xy-only separation that, combined with the
+            # existing (fixed) z gap, reaches the target 3D distance.
+            target_planar_squared = max(target * target - dz * dz, 0.0)
+            target_planar = math.sqrt(target_planar_squared)
+            scale = target_planar / planar_distance
+            correction_x = dx * (scale - 1.0) * 0.5
+            correction_y = dy * (scale - 1.0) * 0.5
+            first[0] -= correction_x
+            first[1] -= correction_y
+            second[0] += correction_x
+            second[1] += correction_y
+        if not moved:
+            break
+
+
+def _smiles_layout(
+    atom_count: int, bonds: list[Bond], chiralities: list[str | None],
+) -> list[tuple[float, float, float]]:
+    """Create a modest 2D starting layout; it is intentionally not a conformer generator."""
+    if atom_count == 1:
+        return [(0.0, 0.0, 0.0)]
+    positions = [
+        [1.45 * index, 0.35 * math.sin(index * 2.4), 0.0]
+        for index in range(atom_count)
+    ]
+    bonded = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in bonds}
+    _relax_xy(positions, atom_count, bonded)
     center_x = sum(position[0] for position in positions) / atom_count
     center_y = sum(position[1] for position in positions) / atom_count
     centered = [[position[0] - center_x, position[1] - center_y, 0.0] for position in positions]
@@ -123,6 +188,15 @@ def _smiles_layout(
         (-1.0, 1.0, -1.0), (-1.0, -1.0, 1.0),
     )
     scale = 1.45 / math.sqrt(3.0)
+    # Read every center's own position from a frozen pre-loop snapshot, not
+    # from `centered` as the loop mutates it. Reading live would let a later
+    # stereocenter's placement build on an *earlier* stereocenter's already
+    # offset output whenever they're adjacent (the common case in a ring of
+    # stereocenters, e.g. a pyranose sugar), compounding a small per-center
+    # offset into a multi-Angstrom bond stretch after a few links in the
+    # chain -- confirmed by reproducing exactly that on
+    # "OC[C@@H]1OC(O)[C@H](O)[C@@H](O)[C@H]1O" before this fix.
+    reference = [tuple(position) for position in centered]
     for center_index, chirality in enumerate(chiralities):
         if chirality is None or len(neighbors[center_index]) < 3:
             continue
@@ -130,7 +204,7 @@ def _smiles_layout(
         vectors = list(tetrahedron)
         if chirality == "@@":
             vectors[0], vectors[1] = vectors[1], vectors[0]
-        center = centered[center_index]
+        center = reference[center_index]
         for neighbor_index, vector in zip(ordered_neighbors, vectors):
             centered[neighbor_index] = [
                 center[axis] + vector[axis] * scale for axis in range(3)
@@ -166,6 +240,36 @@ def _smiles_layout(
             second_center[1] + axis[1] * 0.70 + perpendicular[1] * 1.20 * second_sign,
             second_center[2],
         ]
+    # Placing a stereocenter's neighbours on a fixed tetrahedron (and a
+    # double bond's substituents on fixed offsets) overwrites whatever x/y
+    # position the initial relaxation gave those atoms, without regard to
+    # positions a *different*, already-processed stereocenter assigned to a
+    # shared ring neighbour. Left alone, that can leave some bonds several
+    # Angstroms long in a ring with adjacent stereocenters (e.g. a pyranose
+    # sugar) -- not just a cosmetically poor layout, but one bad enough that
+    # UFF minimization starting from it can hit a genuine collinear-angle
+    # singularity. A second xy-only relaxation pass repairs bond lengths
+    # without touching z, which is where tetrahedral handedness lives.
+    _relax_xy(centered, atom_count, bonded, iterations=200)
+    _snap_bond_lengths_xy(centered, bonds)
+    # Two different stereocenters can still both claim a shared ring
+    # neighbour (the last one processed wins); if that neighbour's offset
+    # happens to coincide with an unrelated atom's -- observed exactly on
+    # the same pyranose sugar SMILES above, two atoms 4+ bonds apart ended
+    # up at identical coordinates -- a UFF angle/vdW evaluation at that atom
+    # would face an outright zero-distance degeneracy, worse than a merely
+    # stretched bond. Nudge any atom within 0.05 Angstrom of an earlier one
+    # apart deterministically so no two atoms are ever exactly coincident.
+    for index in range(1, atom_count):
+        for earlier in range(index):
+            dx = centered[index][0] - centered[earlier][0]
+            dy = centered[index][1] - centered[earlier][1]
+            dz = centered[index][2] - centered[earlier][2]
+            if math.sqrt(dx * dx + dy * dy + dz * dz) < 0.05:
+                angle = index * 2.399963
+                centered[index][0] += 0.3 * math.cos(angle)
+                centered[index][1] += 0.3 * math.sin(angle)
+                break
     return [tuple(position) for position in centered]
 
 

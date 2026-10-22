@@ -349,6 +349,24 @@ try:
     except MolfileError:
         pass
 
+    # A pyranose sugar (every ring carbon a stereocenter) previously failed
+    # minimization outright: compounding bond-length drift across adjacent
+    # ring stereocenters, plus implicit hydroxyl hydrogens placed exactly
+    # 180 degrees from their parent bond (a genuine collinear-angle
+    # singularity for non-linear O_3), together produced a starting
+    # geometry UFF's angle gradient refused to evaluate.
+    sugar_result = addon.bpy.ops.blendmol.import_smiles(
+        smiles="OC[C@@H]1OC(O)[C@H](O)[C@@H](O)[C@H]1O", molecule_name="sugar",
+    )
+    assert sugar_result == {"FINISHED"}, sugar_result
+    sugar_root = addon._selected_molecule_root(addon.bpy.context)
+    sugar_collection = addon._molecule_collection(sugar_root)
+    _select_only(_atom_object(sugar_collection, 0))
+    assert addon.bpy.ops.blendmol.make_hydrogens_explicit() == {"FINISHED"}
+    sugar_molecule = addon._deserialize_molecule(sugar_root["blend_mol_data"])
+    sugar_minimize = addon.minimize_partial_energy(sugar_molecule, 30, 0.02)
+    assert sugar_minimize.ready, sugar_minimize.messages
+
     print(
         "BLEND_MOL_CRUD_LIFECYCLE_SMOKE_OK",
         "new_molecule_add_atom_add_bonded_atom_ok",
@@ -366,6 +384,7 @@ try:
         "missing_file_import_cancelled_ok",
         "smiles_import_ok",
         "malformed_smiles_raises_ok",
+        "ring_stereocenter_sugar_minimizes_ok",
     )
 finally:
     addon.unregister()

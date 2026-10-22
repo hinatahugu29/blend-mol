@@ -64,7 +64,12 @@ branch; both were confirmed against Open Babel 3.1.1's own C++ source
 export. Version 0.1.66 splits the single flat N-panel into seven
 collapsible, workflow-grouped sub-panels (no operator or property removed),
 emphasizes the three primary actions, and collapses the UFF energy
-breakdown and less-used sections by default.
+breakdown and less-used sections by default. Version 0.1.72 fixes a
+user-reported SMILES import failure (a pyranose sugar) that hit a
+"collinear atoms" UFF error: ring-adjacent stereocenters could compound
+bond-length drift to over 4 Å, and implicit hydrogens on a singly-bonded
+atom (e.g. any -OH) were placed exactly opposite their parent bond, a
+genuine angle-gradient singularity for any non-linear atom type.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
