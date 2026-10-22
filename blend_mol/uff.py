@@ -15,6 +15,13 @@ from typing import Callable
 
 _KJ_TO_KCAL = 1.0 / 4.184
 
+# A single small-energy-change step is not reliable evidence of convergence: a
+# short interactive chunk (Live UFF settles in batches of 1-10 iterations) can
+# take one incidentally tiny step -- e.g. from line-search backtracking --
+# while the gradient is still well above gradient_tolerance. Require this many
+# *consecutive* steps under energy_tolerance before trusting it.
+_ENERGY_TOLERANCE_STREAK = 3
+
 try:
     from .molfile import Atom, Molecule
     from .native_backend import (
@@ -1589,6 +1596,7 @@ def minimize_partial_energy(
                 evaluation_messages,
             )
         gradient = [component for vector in evaluated_gradient for component in vector]
+        energy_tolerance_streak = 0
         for _ in range(iterations):
             if cancelled is not None and cancelled():
                 termination = "cancelled"
@@ -1695,8 +1703,12 @@ def minimize_partial_energy(
             current_objective = candidate_objective
             completed += 1
             if energy_change <= energy_tolerance:
-                termination = "energy tolerance"
-                break
+                energy_tolerance_streak += 1
+                if energy_tolerance_streak >= _ENERGY_TOLERANCE_STREAK:
+                    termination = "energy tolerance"
+                    break
+            else:
+                energy_tolerance_streak = 0
 
         final_molecule = _with_positions(molecule, positions)
         final_energy = partial_energy(final_molecule, context.typing, context)
@@ -1748,6 +1760,7 @@ def minimize_partial_energy(
                 evaluation_messages,
             )
         gradient = [list(vector) for vector in evaluated_gradient]
+        energy_tolerance_streak = 0
         for _ in range(iterations):
             if cancelled is not None and cancelled():
                 termination = "cancelled"
@@ -1832,8 +1845,12 @@ def minimize_partial_energy(
             current_objective = candidate_objective
             gradient = [list(vector) for vector in evaluated_gradient]
             if 0.0 <= energy_change <= energy_tolerance:
-                termination = "energy tolerance"
-                break
+                energy_tolerance_streak += 1
+                if energy_tolerance_streak >= _ENERGY_TOLERANCE_STREAK:
+                    termination = "energy tolerance"
+                    break
+            else:
+                energy_tolerance_streak = 0
 
         final_molecule = _with_positions(molecule, positions)
         final_energy = partial_energy(final_molecule, context.typing, context)
@@ -1846,6 +1863,7 @@ def minimize_partial_energy(
             completed, termination, (), state,
         )
 
+    energy_tolerance_streak = 0
     for _ in range(iterations):
         if cancelled is not None and cancelled():
             termination = "cancelled"
@@ -1901,7 +1919,11 @@ def minimize_partial_energy(
                 accepted = True
                 completed += 1
                 if energy_change <= energy_tolerance:
-                    termination = "energy tolerance"
+                    energy_tolerance_streak += 1
+                    if energy_tolerance_streak >= _ENERGY_TOLERANCE_STREAK:
+                        termination = "energy tolerance"
+                else:
+                    energy_tolerance_streak = 0
                 break
             step *= 0.5
         if termination == "cancelled":

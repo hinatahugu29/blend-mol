@@ -191,7 +191,10 @@ class TestUffTyping(unittest.TestCase):
         molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
         result = minimize_partial_energy(molecule, 20, 0.02, energy_tolerance=1e20)
         self.assertTrue(result.ready)
-        self.assertEqual(result.iterations, 1)
+        # A huge tolerance makes every step trivially satisfy it, but a single
+        # such step is not trusted as real convergence -- it takes
+        # _ENERGY_TOLERANCE_STREAK consecutive steps under tolerance.
+        self.assertEqual(result.iterations, uff._ENERGY_TOLERANCE_STREAK)
         self.assertEqual(result.termination, "energy tolerance")
         with self.assertRaisesRegex(ValueError, "energy tolerance"):
             minimize_partial_energy(molecule, 1, 0.02, energy_tolerance=0.0)
