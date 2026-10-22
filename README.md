@@ -69,7 +69,13 @@ user-reported SMILES import failure (a pyranose sugar) that hit a
 "collinear atoms" UFF error: ring-adjacent stereocenters could compound
 bond-length drift to over 4 Å, and implicit hydrogens on a singly-bonded
 atom (e.g. any -OH) were placed exactly opposite their parent bond, a
-genuine angle-gradient singularity for any non-linear atom type.
+genuine angle-gradient singularity for any non-linear atom type. Version
+0.1.73 follows up with a lateral check across conjugated polyenes, fused
+rings, and chain/ring stereocenter molecules; fixes adjacent stereocenters
+overwriting a shared neighbour instead of averaging it (open-chain polyols
+went from 0.3 Å to ~1.5 Å between the closest non-bonded atoms); and
+records a remaining, non-crashing close-contact limit for rings with 3+
+mutually adjacent stereocenters (e.g. beta-glucose) in ROADMAP.md.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

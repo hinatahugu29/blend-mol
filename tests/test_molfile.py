@@ -277,6 +277,26 @@ class TestTriphenyleneMolfile(unittest.TestCase):
                     f"atoms {first} and {second} are {distance:.4f} Å apart, should never coincide",
                 )
 
+    def test_chain_adjacent_stereocenters_average_a_shared_neighbour(self):
+        # Lateral follow-up to the ring-adjacent-stereocenter fix above: an
+        # open chain of adjacent stereocenters shares a neighbour between
+        # consecutive centers the same way a ring does. Before averaging a
+        # repeated claim on a shared atom (instead of letting the later
+        # stereocenter overwrite it outright), this open-chain polyol left
+        # two non-bonded atoms only 0.3 Å apart; the fix brings that up to
+        # roughly 1.5 Å.
+        chain = read_smiles("C[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)C", "polyol")
+        min_nonbonded = None
+        bonded_pairs = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in chain.bonds}
+        for first in range(len(chain.atoms)):
+            for second in range(first + 1, len(chain.atoms)):
+                if (first, second) in bonded_pairs:
+                    continue
+                distance = math.dist(chain.atoms[first].position, chain.atoms[second].position)
+                if min_nonbonded is None or distance < min_nonbonded:
+                    min_nonbonded = distance
+        self.assertGreater(min_nonbonded, 1.0)
+
     def test_preserves_directional_double_bond_stereochemistry(self):
         opposite = read_smiles("F/C=C/F")
         matching = read_smiles("F/C=C\\F")

@@ -197,6 +197,19 @@ def _smiles_layout(
     # chain -- confirmed by reproducing exactly that on
     # "OC[C@@H]1OC(O)[C@H](O)[C@@H](O)[C@H]1O" before this fix.
     reference = [tuple(position) for position in centered]
+    # Two adjacent stereocenters in a ring or chain commonly share one
+    # neighbour (each treats the other as one of its own four substituents).
+    # Overwriting that neighbour's position outright for whichever center is
+    # processed last can leave it far from where the *other* center's
+    # equally-valid placement put it -- observed as non-bonded atoms left
+    # within 0.3 Angstrom of each other on both an open-chain polyol
+    # (C[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)C) and beta-glucose
+    # (OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O), driving the initial UFF
+    # energy into the billions of kcal/mol even after the sweep above fixed
+    # the far worse multi-Angstrom bond stretch. Averaging a repeated claim
+    # with the existing placement, instead of overwriting it, keeps the
+    # shared atom roughly consistent with both centers' tetrahedra.
+    claims = [0] * atom_count
     for center_index, chirality in enumerate(chiralities):
         if chirality is None or len(neighbors[center_index]) < 3:
             continue
@@ -206,9 +219,14 @@ def _smiles_layout(
             vectors[0], vectors[1] = vectors[1], vectors[0]
         center = reference[center_index]
         for neighbor_index, vector in zip(ordered_neighbors, vectors):
-            centered[neighbor_index] = [
-                center[axis] + vector[axis] * scale for axis in range(3)
-            ]
+            placement = [center[axis] + vector[axis] * scale for axis in range(3)]
+            if claims[neighbor_index] == 0:
+                centered[neighbor_index] = placement
+            else:
+                centered[neighbor_index] = [
+                    (centered[neighbor_index][axis] + placement[axis]) / 2.0 for axis in range(3)
+                ]
+            claims[neighbor_index] += 1
     # Directional markers on the two single bonds around a double bond encode
     # whether its substituents begin on opposite or matching sides.
     for double_bond in (bond for bond in bonds if bond.order == 2):
