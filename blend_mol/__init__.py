@@ -124,7 +124,7 @@ class BlendMolSettings(PropertyGroup):
         description="Automatically relax surrounding atoms after moving one explicit atom; stops after settling",
     )
     uff_live_settle_updates: IntProperty(
-        name="Maximum Settle Updates", default=25, min=1, max=500,
+        name="Maximum Settle Updates", default=75, min=1, max=500,
         description="Maximum background updates after each atom movement",
     )
     distance_constraint_target: FloatProperty(
