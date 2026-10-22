@@ -26,9 +26,10 @@ from mathutils import Matrix, Vector
 
 from .molfile import Atom, Bond, Molecule, MolfileError, read_pdb, read_sdf, read_smiles, read_v2000, read_xyz, write_pdb, write_sdf, write_v2000, write_xyz
 from .uff import (
-    _dihedral_angle, angle_bend_energy, bond_stretch_energy, minimize_partial_energy,
-    numeric_gradient_atom_indices, out_of_plane_energy, partial_energy,
-    prepare_uff_context, torsion_energy, type_molecule, van_der_waals_energy,
+    _dihedral_angle, _gradient_step_metrics, angle_bend_energy, bond_stretch_energy,
+    minimize_partial_energy, numeric_gradient_atom_indices, out_of_plane_energy, partial_energy,
+    partial_objective_energy_gradient, prepare_uff_context, torsion_energy, type_molecule,
+    van_der_waals_energy,
 )
 from .native_backend import backend_status, set_backend_preference
 from .live_worker import LatestOnlyWorker, adapt_chunk_iterations, should_continue_relaxation
@@ -2170,10 +2171,32 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                 "next_adaptive_steps": self._adaptive_steps,
                 "compute_budget_ms": settings.uff_live_target_ms,
             }, separators=(",", ":"))
-            if should_continue_relaxation(
+            continue_settling = should_continue_relaxation(
                 result.iterations, result.termination,
                 self._settle_updates, settings.uff_live_settle_updates,
-            ):
+            )
+            if not continue_settling and self._settle_updates < settings.uff_live_settle_updates:
+                # A string-based termination reason ("energy tolerance", "line
+                # search stalled") can be satisfied well before the gradient
+                # itself is anywhere near uff_gradient_tolerance -- confirmed
+                # by headless measurement after the 0.1.67 fix. Only the
+                # gradient is authoritative, so check it directly before
+                # trusting "ready" while settle budget remains.
+                residual_fixed = frozenset(_fixed_atom_indices(root) | {self._atom_index})
+                _residual_objective, residual_gradient, residual_messages = (
+                    partial_objective_energy_gradient(
+                        result.molecule, self._prepared_uff, residual_fixed,
+                        _distance_constraints(root), _angle_constraints(root),
+                        _dihedral_constraints(root), 1e-4,
+                    )
+                )
+                if not residual_messages:
+                    residual_max_component, _residual_max_norm = _gradient_step_metrics(
+                        residual_gradient, residual_fixed
+                    )
+                    if residual_max_component >= settings.uff_gradient_tolerance:
+                        continue_settling = True
+            if continue_settling:
                 self._settle_updates += 1
                 self._submit(result.molecule, root, settings, "settling")
             else:

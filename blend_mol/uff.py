@@ -1520,6 +1520,43 @@ def _gradient_step_metrics(
     return max_component, max_atom_norm
 
 
+_FIRE2_ESCAPE_MAX_ITERATIONS = 20
+
+
+def _attempt_fire2_escape(
+    molecule: Molecule, positions: list[list[float]], fixed_atoms: set[int] | frozenset[int],
+    max_step: float,
+    distance_constraints: tuple[tuple[int, int, float, float], ...],
+    angle_constraints: tuple[tuple[int, int, int, float, float], ...],
+    dihedral_constraints: tuple[tuple[int, int, int, int, float, float], ...],
+    remaining_iterations: int, gradient_tolerance: float, energy_tolerance: float,
+    cancelled: Callable[[], bool] | None,
+) -> "UffMinimizationResult | None":
+    """Recover from a stalled Cartesian line search (LBFGS/STEEPEST).
+
+    UFF's van der Waals term is steep enough near a close contact that the
+    line search can fail to accept *any* step even after repeated halving,
+    while the gradient is still far above gradient_tolerance -- reproducing
+    what this project's ROADMAP already anticipated as the case for falling
+    back to FIRE2. FIRE2's damped-dynamics step never needs a
+    sufficient-decrease test, so it can usually push through where the line
+    search gives up. Only adopted when it actually makes progress; otherwise
+    the caller reports the stall exactly as before.
+    """
+    if remaining_iterations <= 0:
+        return None
+    stalled_molecule = _with_positions(molecule, positions)
+    escape = minimize_partial_energy(
+        stalled_molecule, min(remaining_iterations, _FIRE2_ESCAPE_MAX_ITERATIONS), max_step,
+        fixed_atoms, distance_constraints, angle_constraints, dihedral_constraints,
+        gradient_tolerance=gradient_tolerance, cancelled=cancelled,
+        energy_tolerance=energy_tolerance, algorithm="FIRE2",
+    )
+    if escape.ready and escape.iterations > 0:
+        return escape
+    return None
+
+
 def minimize_partial_energy(
     molecule: Molecule, iterations: int, max_step: float, fixed_atoms: set[int] | None = None,
     distance_constraints: tuple[tuple[int, int, float, float], ...] = (),
@@ -1683,6 +1720,17 @@ def minimize_partial_energy(
             if termination == "cancelled":
                 break
             if not accepted:
+                escape = _attempt_fire2_escape(
+                    molecule, positions, fixed, max_step, distance_constraints,
+                    angle_constraints, dihedral_constraints, iterations - completed,
+                    gradient_tolerance, energy_tolerance, cancelled,
+                )
+                if escape is not None:
+                    return UffMinimizationResult(
+                        escape.molecule, initial.energy_kcal_mol, escape.final_energy_kcal_mol,
+                        completed + escape.iterations, escape.termination, (),
+                        escape.optimizer_state,
+                    )
                 termination = "line search stalled"
                 break
             step_vector = tuple(
@@ -1931,6 +1979,17 @@ def minimize_partial_energy(
         if termination == "energy tolerance":
             break
         if not accepted:
+            escape = _attempt_fire2_escape(
+                molecule, positions, fixed, max_step, distance_constraints,
+                angle_constraints, dihedral_constraints, iterations - completed,
+                gradient_tolerance, energy_tolerance, cancelled,
+            )
+            if escape is not None:
+                return UffMinimizationResult(
+                    escape.molecule, initial.energy_kcal_mol, escape.final_energy_kcal_mol,
+                    completed + escape.iterations, escape.termination, (),
+                    escape.optimizer_state,
+                )
             termination = "line search stalled"
             break
     final_molecule = _with_positions(molecule, positions)
