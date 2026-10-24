@@ -30,6 +30,7 @@ try:
     stopped_operator._worker = None
     stopped_operator._cancel_event = None
     stopped_operator._root_name = ""
+    stopped_operator._atom_index = -1
     stopped_operator._stop_requested = False
     stopped_operator._prepared_uff = None
     stopped_operator._optimizer_state = None

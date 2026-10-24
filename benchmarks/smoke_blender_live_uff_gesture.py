@@ -224,6 +224,54 @@ try:
     )
     assert held_atom_only_moved_by_user > 0.05, "sanity: the user-driven displacement must be real"
 
+    # --- Gesture 5: a failing auto-start must not retry-flood during the --
+    # same continued drag (e.g. the collinear-angle error). Before the
+    # cooldown, every further micro-movement re-triggered a fresh failing
+    # auto-start, each one reporting another error -- fighting the user's
+    # own grab/cancel/confirm instead of naming the problem once.
+    collinear_molecule = addon.Molecule(
+        "Collinear cooldown smoke",
+        (addon.Atom("O", (0, 0, 0)), addon.Atom("H", (1, 0, 0)), addon.Atom("H", (-1, 0, 0))),
+        (addon.Bond(0, 1, 1), addon.Bond(0, 2, 1)),
+    )
+    collinear_root = addon._create_molecule(collinear_molecule, settings, "cooldown_smoke")
+    collinear_collection = addon._molecule_collection(collinear_root)
+    held_atom_object = next(
+        obj for obj in collinear_collection.objects
+        if obj.get("blend_mol_kind") == "atom" and not obj.get("blend_mol_implicit")
+        and obj.get("blend_mol_atom_index") == 1
+    )
+    for obj in addon.bpy.context.selected_objects:
+        obj.select_set(False)
+    held_atom_object.select_set(True)
+    addon.bpy.context.view_layer.objects.active = held_atom_object
+    addon._AUTO_LIVE_UFF_ERROR_COOLDOWN.clear()
+    held_atom_object.location.x += 0.001  # trivial move: the geometry stays ~collinear
+    trigger_real_auto_start(held_atom_object)
+    drive_gesture_to_completion()
+    cooldown_key = (collinear_root.name, 1)
+    assert "collinear" in collinear_root.get("blend_mol_live_uff_error", ""), (
+        collinear_root.get("blend_mol_live_uff_error")
+    )
+    assert cooldown_key in addon._AUTO_LIVE_UFF_ERROR_COOLDOWN, "a failed auto-start must arm the cooldown"
+
+    # Moving the held atom again right away must not spawn a fresh session:
+    # the depsgraph handler may still arm the deferred timer, but firing it
+    # must be a no-op while the cooldown for this atom is active.
+    held_atom_object.location.x += 0.001
+    addon.bpy.context.view_layer.update()
+    if addon.bpy.app.timers.is_registered(addon._start_auto_live_uff):
+        addon.bpy.app.timers.unregister(addon._start_auto_live_uff)
+    addon._start_auto_live_uff()
+    assert addon._LIVE_UFF_OPERATOR is None, "the error cooldown must suppress an immediate retry"
+
+    # Once the cooldown has elapsed, the same kind of movement may retry.
+    addon._AUTO_LIVE_UFF_ERROR_COOLDOWN[cooldown_key] -= addon._AUTO_LIVE_UFF_ERROR_COOLDOWN_SECONDS + 0.1
+    held_atom_object.location.x += 0.001
+    trigger_real_auto_start(held_atom_object)
+    drive_gesture_to_completion()
+    assert "collinear" in collinear_root.get("blend_mol_live_uff_error", "")
+
     # --- Documented automation boundary: real WM undo/redo need a window --
     undo_blocked = False
     try:
@@ -244,6 +292,7 @@ try:
         "restore_before_after_granularity_ok",
         "real_auto_start_escape_cancel_ok",
         "mid_gesture_multi_step_no_duplicate_session_ok",
+        "auto_start_error_cooldown_ok",
         "background_undo_redo_poll_boundary_confirmed",
         session_1["applied_updates"],
         session_2["applied_updates"],

@@ -2054,6 +2054,15 @@ class BLENDMOL_OT_benchmark_uff_step(Operator):
 _LIVE_UFF_OPERATOR = None
 _AUTO_LIVE_UFF_TIMER_PENDING = False
 _AUTO_LIVE_UFF_TARGET = None
+# How long, after an auto-started Live UFF session ends in error (e.g. the
+# collinear-angle error), to hold off auto-restarting it for the same atom.
+# Without this, continuing to drag an atom through a degenerate geometry
+# re-triggers the depsgraph auto-start handler on every further micro-
+# movement, each attempt failing again -- a flood of repeated error reports
+# that fights the user's own grab/cancel/confirm instead of just naming the
+# problem once. See _AUTO_LIVE_UFF_ERROR_COOLDOWN below.
+_AUTO_LIVE_UFF_ERROR_COOLDOWN_SECONDS = 1.5
+_AUTO_LIVE_UFF_ERROR_COOLDOWN: dict[tuple[str, int], float] = {}
 
 
 def _explicit_atom_has_moved(root, atom_object, atom_index):
@@ -2071,6 +2080,7 @@ def _invalidate_live_uff_before_history_change(*_args):
         bpy.app.timers.unregister(_start_auto_live_uff)
     _AUTO_LIVE_UFF_TIMER_PENDING = False
     _AUTO_LIVE_UFF_TARGET = None
+    _AUTO_LIVE_UFF_ERROR_COOLDOWN.clear()
     if _LIVE_UFF_OPERATOR is not None:
         _LIVE_UFF_OPERATOR._finish(bpy.context, save_session=False)
 
@@ -2092,6 +2102,9 @@ def _start_auto_live_uff() -> None:
         return None
     root, _collection, atom_index = selected
     if target != (root.name, context.active_object.name, atom_index):
+        return None
+    last_error_time = _AUTO_LIVE_UFF_ERROR_COOLDOWN.get((root.name, atom_index))
+    if last_error_time is not None and perf_counter() - last_error_time < _AUTO_LIVE_UFF_ERROR_COOLDOWN_SECONDS:
         return None
     try:
         if not _explicit_atom_has_moved(root, context.active_object, atom_index):
@@ -2174,6 +2187,8 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         """
         root["blend_mol_live_uff_error"] = message
         self.report({"ERROR"}, message)
+        if self._root_name and self._atom_index >= 0:
+            _AUTO_LIVE_UFF_ERROR_COOLDOWN[(self._root_name, self._atom_index)] = perf_counter()
 
     def _cancel_and_restore(self, context):
         """Invalidate work first, then restore this session's coordinate snapshot."""

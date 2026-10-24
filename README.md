@@ -111,7 +111,14 @@ Live UFF run. It also adds "Jitter All Atom Positions", an emergency
 escape that nudges every non-fixed atom in the selected molecule by a
 small random amount to break out of an exactly-degenerate starting
 geometry, available from both the Partial UFF panel (next to a shown
-error) and Display Relaxation & Snapshot.
+error) and Display Relaxation & Snapshot. Version 0.1.80 fixes that
+0.1.79 error-reporting fix turning into its own problem: dragging an
+atom through (or canceling/confirming out of) a degenerate geometry
+re-triggered a fresh failing auto-start on every further micro-movement,
+each one reporting another error and fighting the drag itself. A failed
+auto-start now holds off auto-restarting for that atom for 1.5 seconds,
+so the error is named once per continued drag instead of flooding it;
+manually clicking Start Live UFF again is unaffected.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
