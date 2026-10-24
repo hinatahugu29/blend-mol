@@ -37,6 +37,14 @@ def _select_only(obj) -> None:
     addon.bpy.context.view_layer.objects.active = obj
 
 
+def _select_only_many(objects) -> None:
+    for other in addon.bpy.context.selected_objects:
+        other.select_set(False)
+    for obj in objects:
+        obj.select_set(True)
+    addon.bpy.context.view_layer.objects.active = objects[-1]
+
+
 def _atom_object(collection, atom_index):
     return next(
         obj for obj in collection.objects
@@ -278,6 +286,19 @@ try:
     assert len(molecule.atoms) == atom_count_before_delete - 1
     assert 0 in addon._fixed_atom_indices(root), "deleting a higher-index atom must not shift atom 0's fixed flag"
 
+    # --- delete_atom handles a multi-atom selection in one call -------------
+    _select_only(_atom_object(ethanol_collection, 0))
+    assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}
+    ethanol_before = addon._deserialize_molecule(ethanol_root["blend_mol_data"])
+    ethanol_count_before = len(ethanol_before.atoms)
+    _select_only_many([_atom_object(ethanol_collection, 3), _atom_object(ethanol_collection, 4)])
+    assert addon.bpy.ops.blendmol.delete_atom() == {"FINISHED"}
+    ethanol_after = addon._deserialize_molecule(ethanol_root["blend_mol_data"])
+    assert len(ethanol_after.atoms) == ethanol_count_before - 2
+    assert 0 in addon._fixed_atom_indices(ethanol_root), (
+        "deleting two higher-index atoms together must not shift atom 0's fixed flag"
+    )
+
     # --- delete_bond ----------------------------------------------------------
     molecule = addon._deserialize_molecule(root["blend_mol_data"])
     if molecule.bonds:
@@ -415,6 +436,7 @@ try:
         "minimize_partial_uff_auto_explicit_hydrogens_ok",
         "toggle_live_uff_auto_explicit_hydrogens_ok",
         "delete_atom_reindexes_fixed_atoms_ok",
+        "delete_atom_multi_select_ok",
         "delete_bond_ok",
         "rebuild_subdivision_colors_ok",
         "export_import_v2000_xyz_pdb_sdf_ok",

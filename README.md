@@ -93,7 +93,9 @@ implicit hydrogens before they run. Version 0.1.76 extends the
 auto-replace to free up as many explicit hydrogens as the requested bond
 order needs, so adding a double or triple bond to a fully saturated atom
 (e.g. methane's carbon) replaces two or three hydrogens instead of only
-ever trying one and failing.
+ever trying one and failing. Version 0.1.77 lets "Delete Selected Atom"
+delete every non-implicit atom in the current selection in one call,
+instead of only ever acting on the single active atom.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

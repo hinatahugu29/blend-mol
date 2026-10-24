@@ -499,6 +499,27 @@ def _selected_explicit_atoms(context) -> tuple[bpy.types.Object, bpy.types.Colle
     return root, collection, indices
 
 
+def _selected_explicit_atoms_any(context) -> tuple[bpy.types.Object, bpy.types.Collection, tuple[int, ...]] | None:
+    """Like _selected_explicit_atoms, but any non-zero count of atoms, for
+    operations (e.g. delete) that apply the same way to one atom or many.
+    """
+    root = _selected_molecule_root(context)
+    collection = _molecule_collection(root) if root else None
+    if root is None or collection is None:
+        return None
+    indices = []
+    for obj in context.selected_objects:
+        if obj.parent != root or obj.get("blend_mol_kind") != "atom" or obj.get("blend_mol_implicit"):
+            continue
+        atom_index = obj.get("blend_mol_atom_index")
+        if atom_index is not None:
+            indices.append(atom_index)
+    indices = tuple(sorted(set(indices)))
+    if not indices:
+        return None
+    return root, collection, indices
+
+
 def _selected_angle_atoms(
     context,
 ) -> tuple[bpy.types.Object, bpy.types.Collection, tuple[int, int, int]] | None:
@@ -1633,26 +1654,37 @@ def _remove_atom_reindexed(root: bpy.types.Object, molecule: Molecule, atom_inde
 class BLENDMOL_OT_delete_atom(Operator):
     bl_idname = "blendmol.delete_atom"
     bl_label = "Delete Selected Atom"
+    bl_description = "Delete the selected non-implicit atom(s) and their connected bonds"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        selected = _selected_explicit_atom(context)
+        selected = _selected_explicit_atoms_any(context)
         if selected is None:
-            self.report({"WARNING"}, "Select a non-implicit Blend Mol atom first")
+            self.report({"WARNING"}, "Select one or more non-implicit Blend Mol atoms first")
             return {"CANCELLED"}
-        root, collection, atom_index = selected
+        root, collection, atom_indices = selected
         molecule = _deserialize_molecule(root["blend_mol_data"])
-        updated, fixed_atoms, distances, angles, dihedrals = _remove_atom_reindexed(
-            root, molecule, atom_index,
+        fixed_atoms = _fixed_atom_indices(root)
+        distances, angles, dihedrals = (
+            _distance_constraints(root), _angle_constraints(root), _dihedral_constraints(root),
         )
-        _store_topology_change(root, updated)
+        # Remove highest index first: that never shifts the still-pending
+        # lower indices, so no index bookkeeping is needed between removals.
+        for atom_index in reversed(atom_indices):
+            molecule, fixed_atoms, distances, angles, dihedrals = _remove_atom_reindexed_from(
+                molecule, atom_index, fixed_atoms, distances, angles, dihedrals,
+            )
+        _store_topology_change(root, molecule)
         _store_fixed_atom_indices(root, fixed_atoms)
         _store_distance_constraints(root, distances)
         _store_angle_constraints(root, angles)
         _store_dihedral_constraints(root, dihedrals)
         _clear_molecule_display(root, collection)
-        _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
-        self.report({"INFO"}, f"Deleted atom {atom_index + 1} and its connected bonds")
+        _render_molecule(root, collection, molecule, context.scene.blend_mol_settings)
+        if len(atom_indices) == 1:
+            self.report({"INFO"}, f"Deleted atom {atom_indices[0] + 1} and its connected bonds")
+        else:
+            self.report({"INFO"}, f"Deleted {len(atom_indices)} atoms and their connected bonds")
         return {"FINISHED"}
 
 
