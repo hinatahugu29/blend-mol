@@ -70,6 +70,18 @@ def _update_uff_backend(settings, _context) -> None:
     set_backend_preference(settings.uff_backend)
 
 
+def _update_live_material(settings, _context) -> None:
+    """Re-apply roughness/metallic to the shared atom/bond materials immediately.
+
+    Unlike atom_scale/bond_radius/show_implicit_hydrogens, these are plain
+    material inputs rather than mesh geometry, so refreshing them on every
+    slider step (via _material, defined further below but already in module
+    globals by the time this runs) is cheap and needs no display rebuild.
+    """
+    _material("Blend Mol Atom", settings.roughness, settings.metallic)
+    _material("Blend Mol Bond", settings.roughness, settings.metallic)
+
+
 class BlendMolElementColor(PropertyGroup):
     element: StringProperty()
     color: FloatVectorProperty(
@@ -162,8 +174,12 @@ class BlendMolSettings(PropertyGroup):
         update=_update_uff_backend,
     )
     subdivision_levels: IntProperty(name="Subdivision Levels", default=1, min=1, max=3)
-    roughness: FloatProperty(name="Roughness", default=0.34, min=0.0, max=1.0)
-    metallic: FloatProperty(name="Metallic", default=0.0, min=0.0, max=1.0)
+    roughness: FloatProperty(
+        name="Roughness", default=0.34, min=0.0, max=1.0, update=_update_live_material,
+    )
+    metallic: FloatProperty(
+        name="Metallic", default=0.0, min=0.0, max=1.0, update=_update_live_material,
+    )
     show_implicit_hydrogens: BoolProperty(name="Show Implicit Hydrogens", default=True)
     show_uff_energy_breakdown: BoolProperty(
         name="Show Energy Breakdown", default=False,
@@ -2783,8 +2799,6 @@ class BLENDMOL_PT_file_io(Panel):
         export_row.operator(BLENDMOL_OT_export_pdb.bl_idname, text="PDB", icon="EXPORT")
         export_row.operator(BLENDMOL_OT_export_sdf.bl_idname, text="SDF", icon="EXPORT")
         layout.operator(BLENDMOL_OT_export_uff_report.bl_idname, icon="FILE_TEXT")
-        layout.separator()
-        layout.operator(BLENDMOL_OT_rebuild_display.bl_idname, icon="FILE_REFRESH")
 
 
 class BLENDMOL_PT_edit(Panel):
@@ -3239,9 +3253,12 @@ class BLENDMOL_PT_display(Panel):
         layout.label(text="Display defaults for next import")
         layout.prop(settings, "atom_scale")
         layout.prop(settings, "bond_radius")
+        layout.prop(settings, "show_implicit_hydrogens")
+        layout.operator(BLENDMOL_OT_rebuild_display.bl_idname, icon="FILE_REFRESH")
+        layout.separator()
+        layout.label(text="Material (applies immediately)")
         layout.prop(settings, "roughness")
         layout.prop(settings, "metallic")
-        layout.prop(settings, "show_implicit_hydrogens")
         layout.separator()
         mesh_box = layout.box()
         mesh_box.label(text="Mesh detail")

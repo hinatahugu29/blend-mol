@@ -734,3 +734,35 @@ C=O結合が1本だけ残ることを検証する専用リグレッションを�
 2個減ること、固定原子（より小さいインデックス）のインデックスが
 ずれないことを検証する専用リグレッションを追加。依存なしテスト61件、
 ヘッドレススモーク5種をすべて再確認。
+
+### 2026-10-24: 0.1.78 Rebuildボタンの移設とRoughness/Metallicのリアルタイム化
+
+ユーザー相談：「Rebuild Selected Molecule」ボタン（Import/Exportパネル内）
+と「Display defaults for next import」スライダー群（Display & Mesh
+Settingsパネル内）の位置が離れていて直感的でない。ボタンをスライダー
+近くへ移設するか、スライダー側をリアルタイム反映にするか。
+
+実装を調べたところ、2種類の性質が混在していた：Roughness/Metallicは
+`_material()`がマテリアルのノードを毎回作り直すだけ（メッシュ形状に
+触れない・マテリアル名がシーン共有のため全分子に効く）であり、
+Atom Scale/Bond Radius/Show Implicit Hydrogensはメッシュ形状（球・
+円柱・明示水素の有無）そのものに関わり、変更を反映するには選択分子の
+表示をまるごと再構築（`_clear_molecule_display`+`_render_molecule`）
+する必要がある。
+
+対応：
+- Roughness/Metallicの`FloatProperty`に`update=_update_live_material`を
+  追加し、スライダーを動かすたびに共有マテリアル（"Blend Mol Atom"/
+  "Blend Mol Bond"）のノード入力を即座に再設定するようにした。ジオメトリ
+  再構築は発生しないため、ドラッグ中の負荷は増えない。
+- 「Rebuild Selected Molecule」ボタンをImport/ExportパネルからDisplay &
+  Mesh Settingsパネルへ移設し、Atom Scale/Bond Radius/Show Implicit
+  Hydrogensの直後（Roughness/Metallicより上）に配置。スライダー群を
+  「次回インポート時の既定値（要Rebuild）」グループと「マテリアル
+  （即時反映）」グループへラベルで分離した。
+
+`smoke_blender_crud_lifecycle.py`に、`settings.roughness`/`metallic`を
+変更した直後（`rebuild_display`を呼ばずに）共有マテリアルのシェーダー
+入力が更新されていることを検証する専用リグレッションを追加。
+依存なしテスト61件、ヘッドレススモーク5種をすべて再確認。実機GUIでの
+スライダー操作感の確認は別途必要。

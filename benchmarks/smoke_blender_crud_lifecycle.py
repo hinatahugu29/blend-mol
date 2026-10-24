@@ -319,6 +319,19 @@ try:
     ), "add_subdivision must attach a Subdivision Surface modifier"
     assert addon.bpy.ops.blendmol.reset_element_colors() == {"FINISHED"}
 
+    # --- roughness/metallic apply live, without a display rebuild -----------
+    settings.roughness = 0.9
+    settings.metallic = 0.6
+    atom_material = addon.bpy.data.materials.get("Blend Mol Atom")
+    bond_material = addon.bpy.data.materials.get("Blend Mol Bond")
+    assert atom_material is not None and bond_material is not None
+    for material in (atom_material, bond_material):
+        shader = material.node_tree.nodes["Principled BSDF"]
+        assert abs(shader.inputs["Roughness"].default_value - 0.9) < 1e-6
+        assert abs(shader.inputs["Metallic"].default_value - 0.6) < 1e-6
+    settings.roughness = 0.34
+    settings.metallic = 0.0
+
     # --- export / import round trip across every supported format ----------
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -439,6 +452,7 @@ try:
         "delete_atom_multi_select_ok",
         "delete_bond_ok",
         "rebuild_subdivision_colors_ok",
+        "roughness_metallic_live_update_ok",
         "export_import_v2000_xyz_pdb_sdf_ok",
         "export_uff_report_ok",
         "missing_file_import_cancelled_ok",
