@@ -100,7 +100,18 @@ applies the Roughness and Metallic display sliders immediately (they
 only ever touch the shared atom/bond materials, never mesh geometry),
 and moves "Rebuild Selected Molecule" into the Display & Mesh Settings
 panel, next to the atom-scale/bond-radius/hydrogen-visibility sliders
-it actually applies, instead of the Import/Export panel.
+it actually applies, instead of the Import/Export panel. Version 0.1.79
+fixes Live UFF failures (e.g. the collinear-angle error) going
+completely silent: the failure was already recorded on the molecule,
+but nothing ever reported it or displayed it, so a session just stopped
+with no visible sign anything went wrong, whether started manually or
+automatically via "Start Live UFF When Moving an Atom". It now reports
+the error and keeps it visible in the Partial UFF panel until the next
+Live UFF run. It also adds "Jitter All Atom Positions", an emergency
+escape that nudges every non-fixed atom in the selected molecule by a
+small random amount to break out of an exactly-degenerate starting
+geometry, available from both the Partial UFF panel (next to a shown
+error) and Display Relaxation & Snapshot.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

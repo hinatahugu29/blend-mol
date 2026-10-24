@@ -187,11 +187,42 @@ try:
     draw_all(context, "fixed atom selected")
     addon.bpy.ops.blendmol.toggle_fixed_atom()
 
+    # --- State 11: a stored Live UFF error must be visible in the panel ---
+    # Previously blend_mol_live_uff_error was written but never read back
+    # anywhere, so a Live UFF failure (e.g. the collinear-angle error) left
+    # no visible trace once the modal session stopped.
+    class RecordingFakeLayout(FakeLayout):
+        def __init__(self, labels):
+            super().__init__()
+            self.labels = labels
+
+        def label(self, text="", icon="NONE"):
+            self.labels.append(text)
+
+        def box(self):
+            return RecordingFakeLayout(self.labels)
+
+        def row(self, align=False):
+            return RecordingFakeLayout(self.labels)
+
+        def column(self, align=False):
+            return RecordingFakeLayout(self.labels)
+
+    root["blend_mol_live_uff_error"] = "UFF: collinear atoms have no stable angle gradient; moved coordinates kept"
+    recorded_labels = []
+    panel = FakePanel(addon.BLENDMOL_PT_uff)
+    panel.layout = RecordingFakeLayout(recorded_labels)
+    panel.draw(context)
+    assert any("collinear atoms have no stable angle gradient" in text for text in recorded_labels), (
+        "the stored Live UFF error must be shown in the Partial UFF panel", recorded_labels
+    )
+    del root["blend_mol_live_uff_error"]
+
     print(
         "BLEND_MOL_PANEL_DRAW_SMOKE_OK",
         "root_panel_ok", "file_io_panel_ok", "edit_panel_ok",
         "constraints_panel_ok", "uff_panel_ok", "relax_panel_ok", "display_panel_ok",
-        "ten_selection_states_ok",
+        "ten_selection_states_ok", "live_uff_error_shown_ok",
     )
 finally:
     addon.unregister()

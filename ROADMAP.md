@@ -766,3 +766,51 @@ Atom Scale/Bond Radius/Show Implicit Hydrogensはメッシュ形状（球・
 入力が更新されていることを検証する専用リグレッションを追加。
 依存なしテスト61件、ヘッドレススモーク5種をすべて再確認。実機GUIでの
 スライダー操作感の確認は別途必要。
+
+### 2026-10-24: 0.1.79 Live UFFのエラーが無言で消える問題を修正、Jitterボタンを新設
+
+ユーザー報告：「Start Live UFF When Moving an Atom」にチェックを入れた
+状態で原子を動かした際、通常のメニュー（Minimize Partial UFF）なら
+出るはずの「UFF: collinear atoms have no stable angle gradient; moved
+coordinates kept」が、Live UFF経由では何も表示されず、何も起きない。
+
+調査の結果、Live UFF特有の不具合ではなく、Live UFFのモーダル内部
+（`BLENDMOL_OT_toggle_live_uff`）全体に共通する欠落だったと判明した：
+エラーは`root["blend_mol_live_uff_error"]`というカスタムプロパティに
+保存されるだけで、(1) モーダル内のどのエラー経路も`self.report()`を
+一度も呼んでおらずステータスバーに何も出ない、(2) パネル描画コード
+（`BLENDMOL_PT_uff`）もこのプロパティを一切参照していなかった。
+そのため自動開始・手動の「Start Live UFF」どちらでも、同じ条件で
+無言停止していた。
+
+対応：
+- `root["blend_mol_live_uff_error"] = message`という代入をすべて
+  `self._set_live_error(root, message)`という新しいヘルパーメソッド
+  経由に置き換えた。このヘルパーはプロパティへの保存と
+  `self.report({"ERROR"}, message)`の両方を行う。
+- `BLENDMOL_PT_uff`のLive UFF表示ボックスに、保存済みの
+  `blend_mol_live_uff_error`があれば常時ラベル表示するようにした
+  （次にLive UFFを開始するまで残る）。ステータスバーのメッセージは
+  ドラッグ中だと見落としやすいための保険。
+
+**応急対応ボタンの新設**：合わせて、衝突（collinear等）で動けなく
+なった場合の応急処置として、「Jitter All Atom Positions」を新設した。
+選択分子の固定原子以外すべてに、指定した大きさ（既定0.05 Å、
+`jitter_magnitude`）までのランダムな変位を1回だけ加える。実行前に
+自動でスナップショットを保存するため、`Restore Position Snapshot`で
+いつでも元に戻せる。Blender標準のRandom Transform（オブジェクトの
+3Dビュー変換を動かすだけで、分子データへの反映に別途Sync Edited Atom
+Positionsが必要）ではなく、分子データを直接更新してその場で再描画まで
+行う専用操作とした。Partial UFFパネル（エラー表示のすぐ下）と
+Display Relaxation & Snapshotパネルの両方に配置。
+
+`smoke_blender_background_worker.py`に、`_set_live_error`が
+プロパティへの保存と`self.report`呼び出しの両方を行うことを直接
+検証するテストを追加。`smoke_blender_panel_draw.py`に、
+`blend_mol_live_uff_error`が設定された状態でPartial UFFパネルの
+描画結果に実際にそのメッセージが含まれることを検証するテストを追加
+（ラベル呼び出しを記録するフェイクレイアウトを使用）。
+`smoke_blender_crud_lifecycle.py`に、Jitterが固定原子を動かさない
+こと、非固定原子を指定範囲内で動かすこと、スナップショットから
+復元できることを検証するテストを追加。依存なしテスト61件、
+ヘッドレススモーク5種をすべて再確認。

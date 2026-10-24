@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 from datetime import datetime
 from itertools import permutations
 from pathlib import Path
@@ -141,6 +142,13 @@ class BlendMolSettings(PropertyGroup):
     uff_live_settle_updates: IntProperty(
         name="Maximum Settle Updates", default=75, min=1, max=500,
         description="Maximum background updates after each atom movement",
+    )
+    jitter_magnitude: FloatProperty(
+        name="Jitter Magnitude (Å)", default=0.05, min=0.001, max=0.5, precision=3,
+        description=(
+            "Maximum random displacement per axis for Jitter All Atom Positions; "
+            "an emergency escape from an exactly-degenerate starting geometry"
+        ),
     )
     distance_constraint_target: FloatProperty(
         name="Target Distance (Å)", default=1.50, min=0.05, max=100.0, precision=3
@@ -1791,6 +1799,60 @@ class BLENDMOL_OT_relax_display_geometry(Operator):
         return {"FINISHED"}
 
 
+class BLENDMOL_OT_jitter_atom_positions(Operator):
+    bl_idname = "blendmol.jitter_atom_positions"
+    bl_label = "Jitter All Atom Positions"
+    bl_description = (
+        "Nudge every non-fixed atom in the selected molecule by a small random "
+        "amount; an emergency escape from an exactly-degenerate starting geometry "
+        "(e.g. a collinear-angle UFF error) that keeps happening even after moving "
+        "an atom by hand"
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        root = _selected_molecule_root(context)
+        collection = _molecule_collection(root) if root else None
+        if root is None or collection is None:
+            self.report({"WARNING"}, "Select a Blend Mol atom, bond, or molecule root first")
+            return {"CANCELLED"}
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        settings = context.scene.blend_mol_settings
+        magnitude = settings.jitter_magnitude
+        fixed_atoms = _fixed_atom_indices(root)
+        _store_position_snapshot(root, molecule)
+        jittered_count = 0
+        atoms = []
+        for index, atom in enumerate(molecule.atoms):
+            if index in fixed_atoms:
+                atoms.append(atom)
+                continue
+            jittered_count += 1
+            atoms.append(Atom(
+                atom.element,
+                tuple(
+                    coordinate + random.uniform(-magnitude, magnitude)
+                    for coordinate in atom.position
+                ),
+                atom.formal_charge,
+                atom.chirality,
+            ))
+        updated = Molecule(molecule.name, tuple(atoms), molecule.bonds)
+        root["blend_mol_data"] = _serialize_molecule(updated)
+        _clear_molecule_display(root, collection)
+        _render_molecule(root, collection, updated, settings)
+        self.report(
+            {"INFO"},
+            f"Jittered {jittered_count} atom(s) by up to ±{magnitude:.3f} Å "
+            f"(Restore Position Snapshot to undo)",
+        )
+        return {"FINISHED"}
+
+
 class BLENDMOL_OT_minimize_partial_uff(Operator):
     bl_idname = "blendmol.minimize_partial_uff"
     bl_label = "Minimize Partial UFF"
@@ -2101,6 +2163,18 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
     start_immediately: BoolProperty(options={"HIDDEN"}, default=False)
     auto_stop_when_ready: BoolProperty(options={"HIDDEN"}, default=False)
 
+    def _set_live_error(self, root: bpy.types.Object, message: str) -> None:
+        """Record a Live UFF failure on root AND surface it to the user.
+
+        Storing the message on root alone (the previous behaviour) left
+        Live UFF failing silently: nothing in the Live UFF panel ever read
+        that property, and this modal operator's own error paths never
+        called self.report, so a failure (e.g. the collinear-angle error)
+        just stopped the session with no visible sign anything went wrong.
+        """
+        root["blend_mol_live_uff_error"] = message
+        self.report({"ERROR"}, message)
+
     def _cancel_and_restore(self, context):
         """Invalidate work first, then restore this session's coordinate snapshot."""
         self._finish(context, save_session=False)
@@ -2111,7 +2185,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
             molecule = _deserialize_molecule(root["blend_mol_data"])
             if (_molecule_revision(root) != self._topology_revision
                     or _topology_signature(molecule) != self._topology_at_start):
-                root["blend_mol_live_uff_error"] = "Cannot restore Live UFF: molecule structure changed"
+                self._set_live_error(root, "Cannot restore Live UFF: molecule structure changed")
                 return
             collection = _molecule_collection(root)
             if collection is None:
@@ -2123,7 +2197,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
             if not _update_explicit_display_geometry(
                 root, collection, restored, context.scene.blend_mol_settings,
             ):
-                root["blend_mol_live_uff_error"] = "Cannot restore all Live UFF display objects"
+                self._set_live_error(root, "Cannot restore all Live UFF display objects")
                 return
             if self._initial_live_log is None:
                 if "blend_mol_uff_live_last" in root:
@@ -2132,7 +2206,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                 root["blend_mol_uff_live_last"] = self._initial_live_log
             root["blend_mol_live_uff_phase"] = "cancelled"
         except (ArithmeticError, KeyError, RuntimeError, TypeError, ValueError) as exc:
-            root["blend_mol_live_uff_error"] = f"Live UFF restore failed: {exc}"
+            self._set_live_error(root, f"Live UFF restore failed: {exc}")
 
     def _submit(self, molecule, root, settings, phase="calculating"):
         if self._cancel_event is not None:
@@ -2262,15 +2336,13 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         try:
             stored_molecule = _deserialize_molecule(root["blend_mol_data"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            root["blend_mol_live_uff_error"] = f"Stored molecule changed: {exc}"
+            self._set_live_error(root, f"Stored molecule changed: {exc}")
             return self._finish(context)
         if (
             _molecule_revision(root) != self._topology_revision
             or _topology_signature(stored_molecule) != self._topology_at_start
         ):
-            root["blend_mol_live_uff_error"] = (
-                "Live UFF stopped because the molecule structure changed"
-            )
+            self._set_live_error(root, "Live UFF stopped because the molecule structure changed")
             return self._finish(context)
         atom_object = next(
             (obj for obj in collection.objects
@@ -2306,13 +2378,13 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                 self._adaptive_steps, compute_ms, settings.uff_live_target_ms,
             )
             if not result.ready:
-                root["blend_mol_live_uff_error"] = result.messages[0] if result.messages else "UFF step failed"
+                self._set_live_error(root, result.messages[0] if result.messages else "UFF step failed")
                 return self._finish(context)
             root["blend_mol_data"] = _serialize_molecule(result.molecule)
             self._applied_results += 1
             display_started = perf_counter()
             if not _update_explicit_display_geometry(root, collection, result.molecule, settings):
-                root["blend_mol_live_uff_error"] = "Live display requires a fully explicit current mesh"
+                self._set_live_error(root, "Live display requires a fully explicit current mesh")
                 return self._finish(context)
             display_ms = (perf_counter() - display_started) * 1000.0
             root["blend_mol_uff_live_last"] = json.dumps({
@@ -2367,7 +2439,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
                 if self.auto_stop_when_ready:
                     return self._finish(context)
         except (ArithmeticError, KeyError, RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            root["blend_mol_live_uff_error"] = str(exc)
+            self._set_live_error(root, str(exc))
             return self._finish(context)
         return {"PASS_THROUGH"}
 
@@ -3112,6 +3184,15 @@ class BLENDMOL_PT_uff(Panel):
                 if live_running:
                     phase = root.get("blend_mol_live_uff_phase", "ready")
                     live_box.label(text=f"Live state: {phase.title()}")
+                if "blend_mol_live_uff_error" in root:
+                    # Live UFF failures (e.g. the collinear-angle error) are
+                    # also reported via self.report when they happen, but
+                    # that status-bar message is easy to miss mid-drag; keep
+                    # it visible here until the next Start Live UFF clears it.
+                    live_box.label(text=root["blend_mol_live_uff_error"], icon="ERROR")
+                    error_row = live_box.row()
+                    error_row.prop(settings, "jitter_magnitude")
+                    error_row.operator(BLENDMOL_OT_jitter_atom_positions.bl_idname, icon="MOD_NOISE")
                 live_box.prop(settings, "uff_live_auto_start")
                 if "blend_mol_uff_live_last" in root:
                     try:
@@ -3226,6 +3307,11 @@ class BLENDMOL_PT_relax(Panel):
         layout.operator(BLENDMOL_OT_save_position_snapshot.bl_idname, icon="BOOKMARKS")
         if "blend_mol_position_snapshot" in root:
             layout.operator(BLENDMOL_OT_restore_position_snapshot.bl_idname, icon="LOOP_BACK")
+        layout.separator()
+        layout.label(text="Stuck on an exactly-degenerate geometry (e.g. collinear)?")
+        jitter_row = layout.row()
+        jitter_row.prop(settings, "jitter_magnitude")
+        jitter_row.operator(BLENDMOL_OT_jitter_atom_positions.bl_idname, icon="MOD_NOISE")
 
 
 class BLENDMOL_PT_display(Panel):
@@ -3297,6 +3383,7 @@ CLASSES = (
     BLENDMOL_OT_set_bond,
     BLENDMOL_OT_delete_bond,
     BLENDMOL_OT_relax_display_geometry,
+    BLENDMOL_OT_jitter_atom_positions,
     BLENDMOL_OT_minimize_partial_uff,
     BLENDMOL_OT_relax_around_selected_atom,
     BLENDMOL_OT_benchmark_uff_step,

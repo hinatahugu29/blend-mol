@@ -224,6 +224,33 @@ try:
     # --- relax_display_geometry (non-UFF) ------------------------------------
     assert addon.bpy.ops.blendmol.relax_display_geometry() == {"FINISHED"}
 
+    # --- jitter_atom_positions: emergency escape from a degenerate geometry -
+    _select_only(_atom_object(collection, 0))
+    assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}  # atom 0 stays put
+    before_jitter = addon._deserialize_molecule(root["blend_mol_data"])
+    settings.jitter_magnitude = 0.05
+    assert addon.bpy.ops.blendmol.jitter_atom_positions() == {"FINISHED"}
+    after_jitter = addon._deserialize_molecule(root["blend_mol_data"])
+    assert len(after_jitter.atoms) == len(before_jitter.atoms)
+    assert math.dist(after_jitter.atoms[0].position, before_jitter.atoms[0].position) < 1e-9, (
+        "a fixed atom must not be jittered"
+    )
+    moved_count = sum(
+        1 for before, after in zip(before_jitter.atoms[1:], after_jitter.atoms[1:])
+        if math.dist(before.position, after.position) > 1e-9
+    )
+    assert moved_count > 0, "jitter_atom_positions must move at least one non-fixed atom"
+    for before, after in zip(before_jitter.atoms[1:], after_jitter.atoms[1:]):
+        assert math.dist(before.position, after.position) <= 0.05 * math.sqrt(3) + 1e-9
+    assert "blend_mol_position_snapshot" in root, "jitter must save a snapshot so it can be undone"
+    assert addon.bpy.ops.blendmol.restore_position_snapshot() == {"FINISHED"}
+    restored_after_jitter = addon._deserialize_molecule(root["blend_mol_data"])
+    for before, restored in zip(before_jitter.atoms, restored_after_jitter.atoms):
+        assert math.dist(before.position, restored.position) < 1e-9
+    # restore_position_snapshot rebuilds the display objects, clearing selection.
+    _select_only(_atom_object(collection, 0))
+    addon.bpy.ops.blendmol.toggle_fixed_atom()  # leave atom 0 unfixed for later steps
+
     # --- minimize_partial_uff on a real, already-validated molecule ---------
     # The synthetic molecule above has sparse, hand-placed coordinates whose
     # implicit hydrogens can land collinear with an existing bond; that is a
@@ -445,6 +472,7 @@ try:
         "toggle_fixed_atom_ok",
         "distance_angle_dihedral_constraints_ok",
         "position_snapshot_round_trip_ok",
+        "jitter_atom_positions_ok",
         "relax_and_minimize_partial_uff_ok",
         "minimize_partial_uff_auto_explicit_hydrogens_ok",
         "toggle_live_uff_auto_explicit_hydrogens_ok",

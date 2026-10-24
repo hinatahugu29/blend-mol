@@ -42,6 +42,34 @@ try:
     stopped_operator._finish = lambda context, **kwargs: addon.BLENDMOL_OT_toggle_live_uff._finish(
         stopped_operator, context, **kwargs
     )
+    stopped_operator._set_live_error = lambda root, message: addon.BLENDMOL_OT_toggle_live_uff._set_live_error(
+        stopped_operator, root, message
+    )
+    reported_calls = []
+    stopped_operator.report = lambda level, message: reported_calls.append((level, message))
+
+    # A Live UFF failure (e.g. the collinear-angle error) used to only ever
+    # write root["blend_mol_live_uff_error"], with nothing calling
+    # self.report and nothing in the panel reading that property back --
+    # it stopped the session with no visible sign anything went wrong.
+    # _set_live_error must do both: store it AND report it.
+    error_probe_molecule = addon.Molecule(
+        "Error probe", (addon.Atom("C", (0, 0, 0)),), (),
+    )
+    error_probe_root = addon._create_molecule(
+        error_probe_molecule, addon.bpy.context.scene.blend_mol_settings, "error_probe",
+    )
+    stopped_operator._set_live_error(
+        error_probe_root, "UFF: collinear atoms have no stable angle gradient; moved coordinates kept",
+    )
+    assert error_probe_root["blend_mol_live_uff_error"] == (
+        "UFF: collinear atoms have no stable angle gradient; moved coordinates kept"
+    )
+    assert reported_calls == [(
+        {"ERROR"}, "UFF: collinear atoms have no stable angle gradient; moved coordinates kept",
+    )], reported_calls
+    reported_calls.clear()
+
     assert stopped_operator._finish(addon.bpy.context) == {"CANCELLED"}
     assert stopped_operator._stop_requested
     late_timer = type("LateTimerEvent", (), {"type": "TIMER"})()
@@ -156,7 +184,7 @@ try:
     root["blend_mol_data"] = initial_data
     assert addon._update_explicit_display_geometry(root, collection, molecule, settings)
     del root["blend_mol_live_uff_error"]
-    print("BLEND_MOL_CANCEL_RESTORE_OK", "escape", "right_click", "stale_result", "topology_guard")
+    print("BLEND_MOL_CANCEL_RESTORE_OK", "escape", "right_click", "stale_result", "topology_guard", "error_reported")
     original_revision = addon._molecule_revision(root)
     moved_only = addon.Molecule(
         molecule.name,
