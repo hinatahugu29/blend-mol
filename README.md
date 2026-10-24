@@ -81,7 +81,15 @@ other as "a neighbour to place," so one center's placement could move the
 exact anchor point a third atom had already been positioned relative to.
 Stereocenters no longer reposition each other; beta-glucose's closest
 non-bonded distance goes from 0.3 to ~1.4 Å, and its partial UFF starting
-energy drops by three orders of magnitude.
+energy drops by three orders of magnitude. Version 0.1.75 removes a
+repeated hand-off when building a molecule from scratch: since UFF only
+ever sees explicit atoms, adding a bond to an already-saturated heavy atom
+used to require manually deleting a spare explicit hydrogen first, and
+running UFF at all required manually running "Make Implicit Hydrogens
+Explicit" beforehand. "Add Bonded Atom" now auto-replaces a spare explicit
+hydrogen instead of rejecting the edit when there's room for one, and both
+"Minimize Partial UFF" and "Live UFF" auto-explicitate any remaining
+implicit hydrogens before they run.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

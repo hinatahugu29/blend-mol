@@ -41,8 +41,19 @@ try:
     select_atoms(root, {0})
     settings.edit_element = "C"
     bpy.context.scene.cursor.location = (2, 0, 0)
+    # A saturated atom's spare explicit hydrogen is now replaced automatically
+    # instead of rejecting the edit outright. Water's O has exactly room for
+    # one such replacement (order 1), but not a higher-order bond stacked on
+    # top of the hydrogen that remains.
+    settings.bond_order = 1
+    assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
+    replaced = addon._deserialize_molecule(root["blend_mol_data"])
+    assert len(replaced.atoms) == 3 and len(replaced.bonds) == 2
+    assert sum(1 for atom in replaced.atoms if atom.element == "H") == 1
+    assert sum(1 for atom in replaced.atoms if atom.element == "C") == 1
+    select_atoms(root, {0})
     before = snapshot(root)
-    for order in (1, 2, 3):
+    for order in (2, 3):
         settings.bond_order = order
         assert bpy.ops.blendmol.add_bonded_atom() == {"CANCELLED"}
         assert snapshot(root) == before, "Rejected edit mutated molecule or display"

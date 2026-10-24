@@ -1358,7 +1358,11 @@ class BLENDMOL_OT_add_atom(Operator):
 class BLENDMOL_OT_add_bonded_atom(Operator):
     bl_idname = "blendmol.add_bonded_atom"
     bl_label = "Add Bonded Atom at 3D Cursor"
-    bl_description = "Add an atom at the 3D cursor and bond it to the selected atom"
+    bl_description = (
+        "Add an atom at the 3D cursor and bond it to the selected atom; "
+        "if that atom is already saturated, replaces one of its explicit "
+        "hydrogens instead of failing"
+    )
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -1373,26 +1377,106 @@ class BLENDMOL_OT_add_bonded_atom(Operator):
             self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
             return {"CANCELLED"}
         settings = context.scene.blend_mol_settings
-        new_atom_index = len(molecule.atoms)
         local_position = root.matrix_world.inverted() @ context.scene.cursor.location
-        updated = Molecule(
-            molecule.name,
-            molecule.atoms + (Atom(settings.edit_element, tuple(local_position), settings.formal_charge),),
-            molecule.bonds + (Bond(atom_index, new_atom_index, settings.bond_order),),
-        )
-        error = _bond_edit_valence_error(molecule, updated, (atom_index, new_atom_index))
+
+        def _try_add(base_molecule: Molecule, center_index: int):
+            new_index = len(base_molecule.atoms)
+            candidate = Molecule(
+                base_molecule.name,
+                base_molecule.atoms
+                + (Atom(settings.edit_element, tuple(local_position), settings.formal_charge),),
+                base_molecule.bonds + (Bond(center_index, new_index, settings.bond_order),),
+            )
+            return candidate, _bond_edit_valence_error(base_molecule, candidate, (center_index, new_index))
+
+        updated, error = _try_add(molecule, atom_index)
+        pending_constraints = None
+        replaced_hydrogen = False
+        if error:
+            # No room at the selected atom's current valence. If it carries
+            # at least one explicit hydrogen, replace that hydrogen with the
+            # new atom instead of making the user delete it by hand first --
+            # the same outcome as selecting the hydrogen and using "Change
+            # Selected Atom Element", just reachable directly from the
+            # saturated heavy atom without hunting for which neighbour is
+            # the spare hydrogen.
+            hydrogen_index = next(
+                (
+                    other for bond in molecule.bonds
+                    for other in (
+                        (bond.atom_b,) if bond.atom_a == atom_index
+                        else (bond.atom_a,) if bond.atom_b == atom_index else ()
+                    )
+                    if molecule.atoms[other].element == "H"
+                ),
+                None,
+            )
+            if hydrogen_index is not None:
+                without_hydrogen, fixed_atoms, distances, angles, dihedrals = _remove_atom_reindexed(
+                    root, molecule, hydrogen_index,
+                )
+                shifted_center = atom_index - (atom_index > hydrogen_index)
+                retry, retry_error = _try_add(without_hydrogen, shifted_center)
+                if not retry_error:
+                    updated, error = retry, None
+                    atom_index = shifted_center
+                    replaced_hydrogen = True
+                    pending_constraints = (fixed_atoms, distances, angles, dihedrals)
         if error:
             self.report({"WARNING"}, error)
             return {"CANCELLED"}
+        new_atom_index = len(updated.atoms) - 1
         _store_topology_change(root, updated)
+        if pending_constraints is not None:
+            fixed_atoms, distances, angles, dihedrals = pending_constraints
+            _store_fixed_atom_indices(root, fixed_atoms)
+            _store_distance_constraints(root, distances)
+            _store_angle_constraints(root, angles)
+            _store_dihedral_constraints(root, dihedrals)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, settings)
         _activate_explicit_atom(context, root, new_atom_index)
-        self.report(
-            {"INFO"},
-            f"Added {settings.edit_element} and bond {atom_index + 1}-{new_atom_index + 1}",
-        )
+        if replaced_hydrogen:
+            self.report(
+                {"INFO"},
+                f"Replaced an explicit hydrogen on atom {atom_index + 1} with "
+                f"{settings.edit_element} and bond {atom_index + 1}-{new_atom_index + 1}",
+            )
+        else:
+            self.report(
+                {"INFO"},
+                f"Added {settings.edit_element} and bond {atom_index + 1}-{new_atom_index + 1}",
+            )
         return {"FINISHED"}
+
+
+def _with_hydrogens_explicit(molecule: Molecule):
+    """Return (updated_molecule, added_count); pure, writes nothing to root."""
+    hydrogens = _implicit_hydrogens(molecule)
+    if not hydrogens:
+        return molecule, 0
+    atoms = list(molecule.atoms)
+    bonds = list(molecule.bonds)
+    for parent_index, position in hydrogens:
+        hydrogen_index = len(atoms)
+        atoms.append(Atom("H", tuple(position)))
+        bonds.append(Bond(parent_index, hydrogen_index, 1))
+    return Molecule(molecule.name, tuple(atoms), tuple(bonds)), len(hydrogens)
+
+
+def _ensure_hydrogens_explicit_for_uff(root: bpy.types.Object, collection: bpy.types.Collection,
+                                        molecule: Molecule, settings) -> Molecule:
+    """If molecule has implicit hydrogens, make them explicit and commit that
+    change to root before a UFF run, since UFF only ever sees explicit atoms.
+    Returns molecule unchanged (and touches nothing) when there is nothing to do.
+    """
+    updated, count = _with_hydrogens_explicit(molecule)
+    if count == 0:
+        return molecule
+    _store_topology_change(root, updated)
+    _clear_molecule_display(root, collection)
+    _render_molecule(root, collection, updated, settings)
+    return updated
 
 
 class BLENDMOL_OT_make_hydrogens_explicit(Operator):
@@ -1412,19 +1496,12 @@ class BLENDMOL_OT_make_hydrogens_explicit(Operator):
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
             return {"CANCELLED"}
-        hydrogens = _implicit_hydrogens(molecule)
-        if not hydrogens:
+        updated, count = _with_hydrogens_explicit(molecule)
+        if count == 0:
             self.report({"INFO"}, "This molecule has no implicit hydrogens")
             return {"CANCELLED"}
         selected = _selected_explicit_atom(context)
         selected_index = selected[2] if selected and selected[0] == root else None
-        atoms = list(molecule.atoms)
-        bonds = list(molecule.bonds)
-        for parent_index, position in hydrogens:
-            hydrogen_index = len(atoms)
-            atoms.append(Atom("H", tuple(position)))
-            bonds.append(Bond(parent_index, hydrogen_index, 1))
-        updated = Molecule(molecule.name, tuple(atoms), tuple(bonds))
         _store_topology_change(root, updated)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
@@ -1434,7 +1511,7 @@ class BLENDMOL_OT_make_hydrogens_explicit(Operator):
             bpy.ops.object.select_all(action="DESELECT")
             root.select_set(True)
             context.view_layer.objects.active = root
-        self.report({"INFO"}, f"Made {len(hydrogens)} hydrogen(s) explicit")
+        self.report({"INFO"}, f"Made {count} hydrogen(s) explicit")
         return {"FINISHED"}
 
 
@@ -1487,6 +1564,56 @@ class BLENDMOL_OT_set_formal_charge(Operator):
         return {"FINISHED"}
 
 
+def _remove_atom_reindexed(root: bpy.types.Object, molecule: Molecule, atom_index: int):
+    """Compute the molecule and fixed-atom/constraint data after deleting one atom.
+
+    Pure: reads the molecule argument and root's current fixed-atom/constraint
+    properties, but writes nothing. Callers store the returned values (and
+    call _store_topology_change) only once they've decided to actually commit
+    the deletion -- e.g. BLENDMOL_OT_add_bonded_atom tries removing a spare
+    explicit hydrogen to make room for a new bond, and must not touch root's
+    stored properties at all if that attempt still doesn't fit the target
+    atom's valence.
+    """
+    atoms = tuple(atom for index, atom in enumerate(molecule.atoms) if index != atom_index)
+    bonds = []
+    for bond in molecule.bonds:
+        if atom_index in {bond.atom_a, bond.atom_b}:
+            continue
+        bonds.append(Bond(
+            bond.atom_a - (bond.atom_a > atom_index),
+            bond.atom_b - (bond.atom_b > atom_index),
+            bond.order,
+            bond.stereo,
+        ))
+    updated = Molecule(molecule.name, atoms, tuple(bonds))
+    fixed_atoms = {
+        index - (index > atom_index)
+        for index in _fixed_atom_indices(root)
+        if index != atom_index
+    }
+    remapped_distances = tuple(
+        (first - (first > atom_index), second - (second > atom_index), target, strength)
+        for first, second, target, strength in _distance_constraints(root)
+        if atom_index not in {first, second}
+    )
+    remapped_angles = tuple(
+        (
+            first - (first > atom_index), center - (center > atom_index),
+            second - (second > atom_index), target, strength,
+        )
+        for first, center, second, target, strength in _angle_constraints(root)
+        if atom_index not in {first, center, second}
+    )
+    remapped_dihedrals = tuple(
+        tuple(index - (index > atom_index) for index in (first, center_a, center_b, fourth))
+        + (target, strength)
+        for first, center_a, center_b, fourth, target, strength in _dihedral_constraints(root)
+        if atom_index not in (first, center_a, center_b, fourth)
+    )
+    return updated, fixed_atoms, remapped_distances, remapped_angles, remapped_dihedrals
+
+
 class BLENDMOL_OT_delete_atom(Operator):
     bl_idname = "blendmol.delete_atom"
     bl_label = "Delete Selected Atom"
@@ -1499,50 +1626,14 @@ class BLENDMOL_OT_delete_atom(Operator):
             return {"CANCELLED"}
         root, collection, atom_index = selected
         molecule = _deserialize_molecule(root["blend_mol_data"])
-        atoms = tuple(atom for index, atom in enumerate(molecule.atoms) if index != atom_index)
-        bonds = []
-        for bond in molecule.bonds:
-            if atom_index in {bond.atom_a, bond.atom_b}:
-                continue
-            bonds.append(Bond(
-                bond.atom_a - (bond.atom_a > atom_index),
-                bond.atom_b - (bond.atom_b > atom_index),
-                bond.order,
-                bond.stereo,
-            ))
-        updated = Molecule(molecule.name, atoms, tuple(bonds))
+        updated, fixed_atoms, distances, angles, dihedrals = _remove_atom_reindexed(
+            root, molecule, atom_index,
+        )
         _store_topology_change(root, updated)
-        fixed_atoms = {
-            index - (index > atom_index)
-            for index in _fixed_atom_indices(root)
-            if index != atom_index
-        }
         _store_fixed_atom_indices(root, fixed_atoms)
-        remapped_constraints = []
-        for first, second, target, strength in _distance_constraints(root):
-            if atom_index in {first, second}:
-                continue
-            remapped_constraints.append((
-                first - (first > atom_index), second - (second > atom_index), target, strength,
-            ))
-        _store_distance_constraints(root, tuple(remapped_constraints))
-        remapped_angles = []
-        for first, center, second, target, strength in _angle_constraints(root):
-            if atom_index in {first, center, second}:
-                continue
-            remapped_angles.append((
-                first - (first > atom_index), center - (center > atom_index),
-                second - (second > atom_index), target, strength,
-            ))
-        _store_angle_constraints(root, tuple(remapped_angles))
-        remapped_dihedrals = []
-        for first, center_a, center_b, fourth, target, strength in _dihedral_constraints(root):
-            indices = (first, center_a, center_b, fourth)
-            if atom_index in indices:
-                continue
-            shifted = tuple(index - (index > atom_index) for index in indices)
-            remapped_dihedrals.append(shifted + (target, strength))
-        _store_dihedral_constraints(root, tuple(remapped_dihedrals))
+        _store_distance_constraints(root, distances)
+        _store_angle_constraints(root, angles)
+        _store_dihedral_constraints(root, dihedrals)
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, context.scene.blend_mol_settings)
         self.report({"INFO"}, f"Deleted atom {atom_index + 1} and its connected bonds")
@@ -1653,6 +1744,7 @@ class BLENDMOL_OT_minimize_partial_uff(Operator):
             self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
             return {"CANCELLED"}
         settings = context.scene.blend_mol_settings
+        molecule = _ensure_hydrogens_explicit_for_uff(root, collection, molecule, settings)
         try:
             result = minimize_partial_energy(
                 molecule, settings.uff_iterations, settings.uff_max_step,
@@ -2042,7 +2134,7 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         if selected is None:
             self.report({"WARNING"}, "Select one explicit atom to manipulate first")
             return {"CANCELLED"}
-        root, _collection, atom_index = selected
+        root, collection, atom_index = selected
         self._root_name = root.name
         self._atom_index = atom_index
         self._last_position = (
@@ -2055,6 +2147,9 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
             return {"CANCELLED"}
+        molecule = _ensure_hydrogens_explicit_for_uff(
+            root, collection, molecule, context.scene.blend_mol_settings,
+        )
         self._topology_revision = _molecule_revision(root)
         self._topology_at_start = _topology_signature(molecule)
         self._prepared_uff = prepare_uff_context(molecule)

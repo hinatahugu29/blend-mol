@@ -231,6 +231,42 @@ try:
     assert minimize_result == {"FINISHED"}, minimize_result
     assert "blend_mol_uff_last_run" in uff_root
 
+    # --- minimize_partial_uff auto-explicitates implicit hydrogens first ----
+    # Methanol built from only its heavy atoms still has implicit hydrogens;
+    # UFF only ever sees explicit atoms, so this must no longer error asking
+    # the user to run "Make Implicit Hydrogens Explicit" by hand first.
+    methanol = addon.Molecule(
+        "Methanol regression",
+        (addon.Atom("C", (0, 0, 0)), addon.Atom("O", (1.43, 0, 0))),
+        (addon.Bond(0, 1, 1),),
+    )
+    methanol_root = addon._create_molecule(methanol, settings, "uff_lifecycle")
+    methanol_collection = addon._molecule_collection(methanol_root)
+    assert len(addon._deserialize_molecule(methanol_root["blend_mol_data"]).atoms) == 2
+    _select_only(_atom_object(methanol_collection, 0))
+    settings.uff_iterations = 3
+    auto_result = addon.bpy.ops.blendmol.minimize_partial_uff()
+    assert auto_result == {"FINISHED"}, auto_result
+    auto_molecule = addon._deserialize_molecule(methanol_root["blend_mol_data"])
+    assert len(auto_molecule.atoms) == 6, "minimize_partial_uff must auto-explicitate implicit hydrogens"
+    assert sum(1 for atom in auto_molecule.atoms if atom.element == "H") == 4
+
+    # --- toggle_live_uff also auto-explicitates implicit hydrogens ----------
+    ethanol = addon.Molecule(
+        "Ethanol regression",
+        (addon.Atom("C", (0, 0, 0)), addon.Atom("C", (1.5, 0, 0)), addon.Atom("O", (2.2, 1.2, 0))),
+        (addon.Bond(0, 1, 1), addon.Bond(1, 2, 1)),
+    )
+    ethanol_root = addon._create_molecule(ethanol, settings, "uff_lifecycle")
+    ethanol_collection = addon._molecule_collection(ethanol_root)
+    _select_only(_atom_object(ethanol_collection, 0))
+    live_result = addon.bpy.ops.blendmol.toggle_live_uff(start_immediately=True)
+    assert live_result == {"RUNNING_MODAL"}, live_result
+    live_molecule = addon._deserialize_molecule(ethanol_root["blend_mol_data"])
+    assert len(live_molecule.atoms) == 9, "toggle_live_uff must auto-explicitate implicit hydrogens before starting"
+    assert sum(1 for atom in live_molecule.atoms if atom.element == "H") == 6
+    addon.bpy.ops.blendmol.toggle_live_uff()  # stop the running session
+
     # --- delete_atom re-indexes fixed atoms and constraints -----------------
     molecule = addon._deserialize_molecule(root["blend_mol_data"])
     atom_count_before_delete = len(molecule.atoms)
@@ -376,6 +412,8 @@ try:
         "distance_angle_dihedral_constraints_ok",
         "position_snapshot_round_trip_ok",
         "relax_and_minimize_partial_uff_ok",
+        "minimize_partial_uff_auto_explicit_hydrogens_ok",
+        "toggle_live_uff_auto_explicit_hydrogens_ok",
         "delete_atom_reindexes_fixed_atoms_ok",
         "delete_bond_ok",
         "rebuild_subdivision_colors_ok",
