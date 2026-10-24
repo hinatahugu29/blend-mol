@@ -118,7 +118,13 @@ re-triggered a fresh failing auto-start on every further micro-movement,
 each one reporting another error and fighting the drag itself. A failed
 auto-start now holds off auto-restarting for that atom for 1.5 seconds,
 so the error is named once per continued drag instead of flooding it;
-manually clicking Start Live UFF again is unaffected.
+manually clicking Start Live UFF again is unaffected. Version 0.1.81
+reports the Live UFF error at WARNING level instead of ERROR: an
+ERROR-level report from a running modal operator pops an attention-
+grabbing box next to the mouse cursor, right on top of an in-progress
+grab, needing an extra click to dismiss before confirming or cancelling
+the grab itself. The status bar and the Partial UFF panel's persistent
+error label are unaffected by this change.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

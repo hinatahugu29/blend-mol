@@ -2184,9 +2184,16 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
         that property, and this modal operator's own error paths never
         called self.report, so a failure (e.g. the collinear-angle error)
         just stopped the session with no visible sign anything went wrong.
+
+        WARNING, not ERROR: Blender pops an attention-grabbing "Report:
+        Error" box next to the mouse cursor for ERROR-level reports from a
+        running modal operator, right on top of an in-progress grab -- it
+        has to be dismissed with an extra click before the user's own grab
+        can be confirmed or cancelled. WARNING still reaches the status bar
+        and stays in the Partial UFF panel without that popup.
         """
         root["blend_mol_live_uff_error"] = message
-        self.report({"ERROR"}, message)
+        self.report({"WARNING"}, message)
         if self._root_name and self._atom_index >= 0:
             _AUTO_LIVE_UFF_ERROR_COOLDOWN[(self._root_name, self._atom_index)] = perf_counter()
 

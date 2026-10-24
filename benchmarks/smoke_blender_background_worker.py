@@ -66,8 +66,12 @@ try:
     assert error_probe_root["blend_mol_live_uff_error"] == (
         "UFF: collinear atoms have no stable angle gradient; moved coordinates kept"
     )
+    # WARNING, not ERROR: an ERROR-level report from a running modal
+    # operator pops an attention-grabbing box next to the mouse cursor,
+    # which blocks confirming/cancelling an in-progress grab until
+    # dismissed -- user-reported after 0.1.79 first added reporting here.
     assert reported_calls == [(
-        {"ERROR"}, "UFF: collinear atoms have no stable angle gradient; moved coordinates kept",
+        {"WARNING"}, "UFF: collinear atoms have no stable angle gradient; moved coordinates kept",
     )], reported_calls
     reported_calls.clear()
 
