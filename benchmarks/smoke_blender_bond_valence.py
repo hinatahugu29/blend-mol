@@ -103,6 +103,25 @@ try:
     settings.formal_charge = 0
     assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
     assert not addon._molecule_validation_messages(addon._deserialize_molecule(charged["blend_mol_data"]))
-    print("BLEND_MOL_BOND_VALENCE_OK post_uff atomic_rejection valid_addition repair charged_nitrogen")
+    # A double bond addition that needs two hydrogens' worth of valence
+    # freed up replaces two explicit hydrogens, not just one: a saturated
+    # methane-like carbon has no room for order 2 at all, let alone after
+    # giving up a single hydrogen.
+    methane = addon.Molecule("Methane regression", (addon.Atom("C", (0, 0, 0)),) + tuple(
+        addon.Atom("H", position) for position in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))
+    ), tuple(addon.Bond(0, index, 1) for index in range(1, 5)))
+    methane_root = addon._create_molecule(methane, settings, "regression")
+    select_atoms(methane_root, {0})
+    settings.edit_element = "O"
+    settings.bond_order = 2
+    assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
+    double_bonded = addon._deserialize_molecule(methane_root["blend_mol_data"])
+    assert len(double_bonded.atoms) == 4, "two hydrogens must be replaced, not just one"
+    assert sum(1 for atom in double_bonded.atoms if atom.element == "H") == 2
+    assert sum(1 for atom in double_bonded.atoms if atom.element == "O") == 1
+    oxygen_bond = next(b for b in double_bonded.bonds if {double_bonded.atoms[b.atom_a].element,
+                                                           double_bonded.atoms[b.atom_b].element} == {"C", "O"})
+    assert oxygen_bond.order == 2
+    print("BLEND_MOL_BOND_VALENCE_OK post_uff atomic_rejection valid_addition repair charged_nitrogen multi_hydrogen_replacement")
 finally:
     addon.unregister()

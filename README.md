@@ -89,7 +89,11 @@ running UFF at all required manually running "Make Implicit Hydrogens
 Explicit" beforehand. "Add Bonded Atom" now auto-replaces a spare explicit
 hydrogen instead of rejecting the edit when there's room for one, and both
 "Minimize Partial UFF" and "Live UFF" auto-explicitate any remaining
-implicit hydrogens before they run.
+implicit hydrogens before they run. Version 0.1.76 extends the
+auto-replace to free up as many explicit hydrogens as the requested bond
+order needs, so adding a double or triple bond to a fully saturated atom
+(e.g. methane's carbon) replaces two or three hydrogens instead of only
+ever trying one and failing.
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
 - Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)

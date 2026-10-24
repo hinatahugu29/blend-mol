@@ -1360,8 +1360,8 @@ class BLENDMOL_OT_add_bonded_atom(Operator):
     bl_label = "Add Bonded Atom at 3D Cursor"
     bl_description = (
         "Add an atom at the 3D cursor and bond it to the selected atom; "
-        "if that atom is already saturated, replaces one of its explicit "
-        "hydrogens instead of failing"
+        "if that atom is already saturated, replaces as many of its "
+        "explicit hydrogens as the bond order needs instead of failing"
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -1391,37 +1391,47 @@ class BLENDMOL_OT_add_bonded_atom(Operator):
 
         updated, error = _try_add(molecule, atom_index)
         pending_constraints = None
-        replaced_hydrogen = False
+        replaced_hydrogens = 0
         if error:
             # No room at the selected atom's current valence. If it carries
-            # at least one explicit hydrogen, replace that hydrogen with the
-            # new atom instead of making the user delete it by hand first --
-            # the same outcome as selecting the hydrogen and using "Change
-            # Selected Atom Element", just reachable directly from the
-            # saturated heavy atom without hunting for which neighbour is
-            # the spare hydrogen.
-            hydrogen_index = next(
-                (
-                    other for bond in molecule.bonds
-                    for other in (
-                        (bond.atom_b,) if bond.atom_a == atom_index
-                        else (bond.atom_a,) if bond.atom_b == atom_index else ()
-                    )
-                    if molecule.atoms[other].element == "H"
-                ),
-                None,
+            # explicit hydrogens, replace as many of them as the requested
+            # bond order needs instead of making the user delete them by
+            # hand first -- the same outcome as selecting each hydrogen and
+            # using "Change Selected Atom Element", just reachable directly
+            # from the saturated heavy atom without hunting for which
+            # neighbours are the spare hydrogens. A double/triple bond
+            # addition may need to free up more than one hydrogen's worth
+            # of valence.
+            working_molecule, working_index = molecule, atom_index
+            fixed_atoms = _fixed_atom_indices(root)
+            distances, angles, dihedrals = (
+                _distance_constraints(root), _angle_constraints(root), _dihedral_constraints(root),
             )
-            if hydrogen_index is not None:
-                without_hydrogen, fixed_atoms, distances, angles, dihedrals = _remove_atom_reindexed(
-                    root, molecule, hydrogen_index,
+            while error:
+                hydrogen_index = next(
+                    (
+                        other for bond in working_molecule.bonds
+                        for other in (
+                            (bond.atom_b,) if bond.atom_a == working_index
+                            else (bond.atom_a,) if bond.atom_b == working_index else ()
+                        )
+                        if working_molecule.atoms[other].element == "H"
+                    ),
+                    None,
                 )
-                shifted_center = atom_index - (atom_index > hydrogen_index)
-                retry, retry_error = _try_add(without_hydrogen, shifted_center)
-                if not retry_error:
-                    updated, error = retry, None
-                    atom_index = shifted_center
-                    replaced_hydrogen = True
-                    pending_constraints = (fixed_atoms, distances, angles, dihedrals)
+                if hydrogen_index is None:
+                    break
+                working_molecule, fixed_atoms, distances, angles, dihedrals = _remove_atom_reindexed_from(
+                    working_molecule, hydrogen_index, fixed_atoms, distances, angles, dihedrals,
+                )
+                working_index -= working_index > hydrogen_index
+                replaced_hydrogens += 1
+                updated, error = _try_add(working_molecule, working_index)
+            if not error:
+                atom_index = working_index
+                pending_constraints = (fixed_atoms, distances, angles, dihedrals)
+            else:
+                replaced_hydrogens = 0
         if error:
             self.report({"WARNING"}, error)
             return {"CANCELLED"}
@@ -1436,10 +1446,11 @@ class BLENDMOL_OT_add_bonded_atom(Operator):
         _clear_molecule_display(root, collection)
         _render_molecule(root, collection, updated, settings)
         _activate_explicit_atom(context, root, new_atom_index)
-        if replaced_hydrogen:
+        if replaced_hydrogens:
+            noun = "hydrogen" if replaced_hydrogens == 1 else "hydrogens"
             self.report(
                 {"INFO"},
-                f"Replaced an explicit hydrogen on atom {atom_index + 1} with "
+                f"Replaced {replaced_hydrogens} explicit {noun} on atom {atom_index + 1} with "
                 f"{settings.edit_element} and bond {atom_index + 1}-{new_atom_index + 1}",
             )
         else:
@@ -1564,16 +1575,12 @@ class BLENDMOL_OT_set_formal_charge(Operator):
         return {"FINISHED"}
 
 
-def _remove_atom_reindexed(root: bpy.types.Object, molecule: Molecule, atom_index: int):
+def _remove_atom_reindexed_from(molecule: Molecule, atom_index: int, fixed_atoms, distances, angles, dihedrals):
     """Compute the molecule and fixed-atom/constraint data after deleting one atom.
 
-    Pure: reads the molecule argument and root's current fixed-atom/constraint
-    properties, but writes nothing. Callers store the returned values (and
-    call _store_topology_change) only once they've decided to actually commit
-    the deletion -- e.g. BLENDMOL_OT_add_bonded_atom tries removing a spare
-    explicit hydrogen to make room for a new bond, and must not touch root's
-    stored properties at all if that attempt still doesn't fit the target
-    atom's valence.
+    Pure: takes the current fixed-atom/constraint data explicitly (rather than
+    reading root) so a caller can chain several removals, feeding each result
+    into the next call, without touching root until it decides to commit.
     """
     atoms = tuple(atom for index, atom in enumerate(molecule.atoms) if index != atom_index)
     bonds = []
@@ -1587,14 +1594,14 @@ def _remove_atom_reindexed(root: bpy.types.Object, molecule: Molecule, atom_inde
             bond.stereo,
         ))
     updated = Molecule(molecule.name, atoms, tuple(bonds))
-    fixed_atoms = {
+    remapped_fixed_atoms = {
         index - (index > atom_index)
-        for index in _fixed_atom_indices(root)
+        for index in fixed_atoms
         if index != atom_index
     }
     remapped_distances = tuple(
         (first - (first > atom_index), second - (second > atom_index), target, strength)
-        for first, second, target, strength in _distance_constraints(root)
+        for first, second, target, strength in distances
         if atom_index not in {first, second}
     )
     remapped_angles = tuple(
@@ -1602,16 +1609,25 @@ def _remove_atom_reindexed(root: bpy.types.Object, molecule: Molecule, atom_inde
             first - (first > atom_index), center - (center > atom_index),
             second - (second > atom_index), target, strength,
         )
-        for first, center, second, target, strength in _angle_constraints(root)
+        for first, center, second, target, strength in angles
         if atom_index not in {first, center, second}
     )
     remapped_dihedrals = tuple(
         tuple(index - (index > atom_index) for index in (first, center_a, center_b, fourth))
         + (target, strength)
-        for first, center_a, center_b, fourth, target, strength in _dihedral_constraints(root)
+        for first, center_a, center_b, fourth, target, strength in dihedrals
         if atom_index not in (first, center_a, center_b, fourth)
     )
-    return updated, fixed_atoms, remapped_distances, remapped_angles, remapped_dihedrals
+    return updated, remapped_fixed_atoms, remapped_distances, remapped_angles, remapped_dihedrals
+
+
+def _remove_atom_reindexed(root: bpy.types.Object, molecule: Molecule, atom_index: int):
+    """_remove_atom_reindexed_from, reading the current constraint data from root."""
+    return _remove_atom_reindexed_from(
+        molecule, atom_index,
+        _fixed_atom_indices(root), _distance_constraints(root),
+        _angle_constraints(root), _dihedral_constraints(root),
+    )
 
 
 class BLENDMOL_OT_delete_atom(Operator):
