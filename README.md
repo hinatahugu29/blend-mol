@@ -42,6 +42,7 @@ Current capabilities include starting from an empty scene, importing and exporti
 ## More
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
+- Japanese operation manual (HTML): [`docs/blend_mol_manual.html`](docs/blend_mol_manual.html)
 - Development roadmap and quality gates: [`ROADMAP.md`](ROADMAP.md)
 - Development log and measurements up to 0.1.81: [`ROADMAP_HISTORY.md`](ROADMAP_HISTORY.md)
 - AvogadroLibs design review: [`AVOGADRO_REVIEW.md`](AVOGADRO_REVIEW.md)

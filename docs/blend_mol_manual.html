@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blend Mol 操作マニュアル</title>
+  <style>
+    :root { --ink:#172033; --muted:#536176; --accent:#0f766e; --accent2:#155e75; --line:#dbe3ee; --bg:#f7fafc; --soft:#f0fdfa; --warn:#fff7ed; --info:#eff6ff; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,"Yu Gothic UI",sans-serif;line-height:1.65}
+    main{max-width:1060px;margin:auto;padding:34px 24px 64px}
+    header{padding:34px;background:linear-gradient(130deg,#134e4a,#155e75);color:white;border-radius:18px}
+    h1{margin:0;font-size:clamp(1.8rem,4vw,2.5rem)} header p{margin:.5rem 0 0;opacity:.9}
+    .intro{margin:20px 0;padding:16px 20px;background:var(--info);border-left:4px solid #0284c7;border-radius:8px}
+    nav{margin:24px 0;padding:16px 20px;background:white;border:1px solid var(--line);border-radius:12px;position:sticky;top:12px;z-index:5}
+    nav a{display:inline-block;margin:3px 12px 3px 0;color:var(--accent2);text-decoration:none;font-weight:650} nav a:hover{text-decoration:underline}
+    section{margin-top:24px;padding:28px;background:white;border:1px solid var(--line);border-radius:15px;box-shadow:0 2px 12px #0f172a08}
+    h2{margin:0 0 8px;color:#115e59;font-size:1.45rem}
+    h3{margin:25px 0 8px;font-size:1.08rem;color:#164e63}
+    p{margin:8px 0} .sub{color:var(--muted);margin-top:0}
+    .table-wrap{overflow-x:auto;margin-top:14px}
+    table{width:100%;border-collapse:collapse;font-size:.94rem;min-width:700px}
+    th,td{padding:12px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{background:#f1f5f9;color:#334155;white-space:nowrap}
+    tr:last-child td{border-bottom:none}
+    code,kbd{font-family:ui-monospace,Consolas,monospace;font-size:.9em;background:#f1f5f9;border:1px solid #dbe3ee;border-radius:4px;padding:1px 5px}
+    .tag{display:inline-block;padding:2px 8px;border-radius:99px;background:var(--soft);color:#115e59;font-size:.8rem;font-weight:700;white-space:nowrap}
+    .new{display:inline-block;padding:2px 8px;border-radius:99px;background:#fef3c7;color:#92400e;font-size:.76rem;font-weight:700;white-space:nowrap;margin-left:6px}
+    .note{padding:14px 16px;background:var(--warn);border-radius:8px;color:#7c2d12}
+    .ok{padding:14px 16px;background:var(--soft);border-radius:8px;color:#134e4a}
+    .tip{padding:14px 16px;border-radius:8px;background:var(--warn);color:#7c2d12}
+    .result{margin-top:14px;padding:12px 15px;border-radius:8px;background:var(--info);color:#1e3a8a}
+    .path{padding:12px 15px;border-left:4px solid var(--accent);background:var(--soft);border-radius:5px}
+    ul{padding-left:1.35rem} li{margin:6px 0}
+    ol{margin:8px 0;padding-left:1.55rem}
+    .step{display:inline-grid;place-items:center;width:1.55rem;height:1.55rem;margin-right:7px;border-radius:50%;background:#0f766e;color:white;font-size:.8rem}
+    footer{color:var(--muted);font-size:.9rem;margin-top:22px}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Blend Mol 操作マニュアル</h1>
+    <p>3D ビューのサイドバー（<kbd>N</kbd>）→ <b>Blend Mol</b> タブに表示される操作の、基本手順とボタン一覧</p>
+  </header>
+  <p class="intro">このページは「初めての操作手順（基本操作ガイド）」と「全ボタンの機能棚卸し（UI 機能一覧）」を1本にまとめたものです。はじめて触る場合は <a href="#start-flow">基本操作の流れ</a> を、個々のボタンの詳細を調べたい場合は <a href="#io">機能一覧</a> 以降を参照してください。<span class="new">NEW</span> の印は、直近の更新で追加・変更された挙動です。</p>
+
+  <nav>
+    <a href="#start-flow">基本操作の流れ</a>
+    <a href="#start">入口・作成</a>
+    <a href="#io">読み込み・書き出し</a>
+    <a href="#edit">原子・結合編集</a>
+    <a href="#constraints">UFF拘束</a>
+    <a href="#uff">Partial UFF</a>
+    <a href="#relax">表示用整形・保存</a>
+    <a href="#display">表示・メッシュ</a>
+    <a href="#selection">選択の早見表</a>
+  </nav>
+
+  <section id="start-flow">
+    <h2>基本操作の流れ</h2>
+    <p class="path"><b>操作場所:</b> 3D Viewport → サイドバー（<kbd>N</kbd>）→ Blend Mol</p>
+
+    <h3><span class="step">1</span>新しい分子を作る</h3>
+    <ol>
+      <li>原子を置きたい位置へ 3D カーソルを移動します。</li>
+      <li><b>New Blend Mol Molecule</b> を押します。</li>
+      <li>分子名、最初の元素、形式電荷を入力して確定します。</li>
+    </ol>
+    <p class="result">最初の原子が 3D カーソル位置に作成され、選択状態になります。</p>
+    <p class="tip"><b>補足:</b> SMILES から始める場合は、<b>Import / Export</b> を開いて <b>Create from SMILES</b> を使います。既存ファイルからなら MOL / XYZ / PDB / SDF の読み込みも使えます。</p>
+
+    <h3><span class="step">2</span>原子と結合を追加する</h3>
+    <p>対象の分子を選択した状態で、<b>Edit Atoms &amp; Bonds</b> を開きます。</p>
+    <h4>選択した原子に結合した新しい原子を追加する</h4>
+    <ol>
+      <li>結合の起点にしたい原子を選択します。</li>
+      <li>新しい原子を置く位置へ 3D カーソルを移動します。</li>
+      <li><b>Element</b> と <b>Bond Order</b> を選びます。</li>
+      <li><b>Add Bonded Atom at 3D Cursor</b> を押します。</li>
+    </ol>
+    <p class="result">新しい原子と、選択していた原子からの結合が同時に作成されます。<span class="new">NEW</span> 選択原子が既に飽和していて通常なら結合を追加できない場合は、原子価が収まるまで選択原子の明示水素を自動的に（必要なら複数個）新しい原子へ置き換えます。手動で水素を削除しておく必要はありません。</p>
+    <h4>原子だけを追加する</h4>
+    <p>結合を作らずに原子だけを置くには、元素を選んで <b>Add Atom at 3D Cursor</b> を押します。後から次の手順で結合できます。</p>
+
+    <h3><span class="step">3</span>2つの原子を結合する</h3>
+    <ol>
+      <li>同じ分子内の原子を <b>2つだけ</b> 選択します。複数選択は <kbd>Shift</kbd> を押しながらクリックします。</li>
+      <li><b>Bond Order</b> で単結合（1）、二重結合（2）、三重結合（3）を選びます。</li>
+      <li><b>Create or Change Selected-Atom Bond</b> を押します。</li>
+    </ol>
+    <p class="result">未結合の2原子なら結合を新規作成します。すでに結合済みなら、その結合次数を変更します。</p>
+    <p class="tip"><b>注意:</b> 原子価を超える結合は作成・変更できません。下部の <b>Valence</b> 表示も確認してください（この操作では明示水素の自動置換は行われません。先に対象原子の水素を手動で削除するか、<b>Add Bonded Atom at 3D Cursor</b> を使ってください）。</p>
+
+    <h3><span class="step">4</span>結合・原子を変更・削除する</h3>
+    <h4>結合次数を変える</h4>
+    <p>変更したい結合の両端の原子を2つ選び、<b>Bond Order</b> を変更してから <b>Create or Change Selected-Atom Bond</b> を押します。</p>
+    <h4>結合を削除する</h4>
+    <p>削除したい結合そのものを選択し、表示される <b>Delete Selected Bond</b> を押します。</p>
+    <h4>原子を削除する</h4>
+    <p>原子を選択して <b>Delete Selected Atom</b> を押します。その原子につながる結合も一緒に削除されます。<span class="new">NEW</span> <kbd>Shift</kbd> クリックなどで複数の原子を選択していれば、選択中の原子をまとめて1回の操作で削除できます。</p>
+
+    <h3>仕上げ</h3>
+    <p>原子を Blender の移動ツールで動かした後は、<b>Sync Edited Atom Positions</b> を押して Blend Mol の分子データへ反映します。必要に応じて <b>Relax Display Geometry</b> または <b>Minimize Partial UFF</b> で形状を整えます。<span class="new">NEW</span> UFF 系の操作（<b>Minimize Partial UFF</b> / <b>Start Live UFF</b>）は、暗黙水素が残っていても自動的に明示化してから計算するため、事前に <b>Make Implicit Hydrogens Explicit</b> を手動で実行しておく必要はありません。</p>
+  </section>
+
+  <section id="start"><h2>入口・新規分子作成</h2><p class="sub">常に表示される最上位の Blend Mol パネルです。</p>
+    <div class="table-wrap"><table><thead><tr><th>表示名</th><th>機能</th><th>使い方・結果</th></tr></thead><tbody>
+      <tr><td><b>New Blend Mol Molecule</b></td><td>空の分子を作成</td><td>ダイアログで分子名、最初の元素、形式電荷を設定します。最初の原子は 3D カーソル位置に作成されます。</td></tr>
+      <tr><td>Editing: 分子名</td><td>編集対象の表示</td><td>現在選択している原子・結合が属する分子名を表示します。表示されない場合は、Blend Mol の原子・結合・分子ルートを選択してください。</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section id="io"><h2>Import / Export（読み込み・書き出し）</h2><p class="sub">分子を読み込む、または選択中の分子を書き出すためのパネルです。</p>
+    <div class="table-wrap"><table><thead><tr><th>ボタン</th><th>機能</th><th>補足</th></tr></thead><tbody>
+      <tr><td><b>MOL</b></td><td>MDL V2000 MOL を読み込み</td><td>原子、座標、結合情報を読み込みます。</td></tr>
+      <tr><td><b>XYZ</b></td><td>XYZ を読み込み</td><td>原子座標のみを読み込みます。結合と暗黙水素は自動作成されないため、必要なら手作業で追加します。</td></tr>
+      <tr><td><b>PDB</b></td><td>PDB を読み込み</td><td>原子座標と、ファイル内の <code>CONECT</code> による単結合を読み込みます。</td></tr>
+      <tr><td><b>SDF</b></td><td>SDF を読み込み</td><td>SD ファイルの先頭の V2000 構造レコードを読み込みます。</td></tr>
+      <tr><td><b>Create from SMILES</b></td><td>SMILES から分子を作成</td><td>SMILES と分子名を入力して作成します。基本有機 SMILES のサブセットに対応し、初期配置は簡易 2D レイアウトです。</td></tr>
+      <tr><td><b>MOL / XYZ / PDB / SDF</b>（Export selected molecule）</td><td>選択中の分子を書き出し</td><td>原子・結合・分子ルートのいずれかを選択してから実行します。書き出し前に、Blender 上で動かした原子位置を自動同期します。</td></tr>
+      <tr><td><b>Export Partial UFF Report</b></td><td>UFF の診断情報を JSON 出力</td><td>原子型、実装済みのエネルギー項、拘束、固定原子、最終最小化・ベンチマークのログを保存します。</td></tr>
+    </tbody></table></div>
+    <p class="note"><b>PDB の注意:</b> PDB 出力は結合の有無を <code>CONECT</code> として保存しますが、結合次数と形式電荷は保存されません。</p>
+    <p class="tip"><span class="new">NEW</span> <b>Rebuild Selected Molecule</b> ボタンは、このパネルから <a href="#display"><b>Display &amp; Mesh Settings</b></a> パネルへ移動しました（Atom Scale / Bond Radius / Show Implicit Hydrogens のすぐ下）。表示が崩れた場合や、ジオメトリ系の表示設定を既存の分子へ適用したい場合はそちらを使ってください。</p>
+  </section>
+
+  <section id="edit"><h2>Edit Atoms &amp; Bonds（原子・結合編集）</h2><p class="sub">分子を選択しているときに表示される、日常的な編集の中心です。</p>
+    <h3>共通の入力欄</h3><div class="table-wrap"><table><thead><tr><th>項目</th><th>内容</th><th>使われる操作</th></tr></thead><tbody>
+      <tr><td><b>Element</b></td><td>追加・変更する元素を選択します。</td><td>原子の追加、結合原子の追加、選択原子の元素変更</td></tr>
+      <tr><td><b>Formal Charge</b></td><td>追加・変更する原子の形式電荷（-3 ～ +3）です。</td><td>原子の追加、選択原子の電荷変更</td></tr>
+      <tr><td><b>Bond Order</b></td><td>結合次数（1: 単結合、2: 二重結合、3: 三重結合）です。</td><td>結合原子の追加、2原子間の結合作成・変更</td></tr>
+    </tbody></table></div>
+    <h3>原子位置・原子の操作</h3><div class="table-wrap"><table><thead><tr><th>ボタン</th><th>必要な選択</th><th>機能</th></tr></thead><tbody>
+      <tr><td><b>Sync Edited Atom Positions</b></td><td>分子内の何か</td><td>Blender の移動ツールで変更した原子オブジェクトの位置を、分子データへ反映します。原子をドラッグした後に使います。</td></tr>
+      <tr><td><b>Add Atom at 3D Cursor</b></td><td>対象分子</td><td><b>Element</b> と <b>Formal Charge</b> を使い、3D カーソル位置に未結合の原子を追加します。</td></tr>
+      <tr><td><b>Make Implicit Hydrogens Explicit</b></td><td>対象分子</td><td>表示上の暗黙水素を、選択・編集できる原子と単結合に変換します。<span class="new">NEW</span> UFF の実行（Minimize Partial UFF / Live UFF）では以下のとおり自動的に行われるため、UFF のためだけに事前実行する必要は無くなりました。手動編集のために水素を個別に触りたいときに使います。</td></tr>
+      <tr><td><b>Add Bonded Atom at 3D Cursor</b></td><td>暗黙水素でない原子を1つ</td><td>3D カーソル位置に新しい原子を置き、選択原子へ指定結合次数で結合します。<span class="new">NEW</span> 選択原子が飽和していて通常なら結合を追加できない場合、指定した結合次数が収まるまで明示水素を1個ずつ（必要なら複数個）新しい原子へ自動的に置き換えます。置き換えても収まらない場合は分子を変更せずエラーを表示します。</td></tr>
+      <tr><td><b>Change Selected Atom Element</b></td><td>暗黙水素でない原子を1つ</td><td>選択原子の元素を <b>Element</b> の値に変更します。座標と電荷は保持されます。</td></tr>
+      <tr><td><b>Set Selected Atom Charge</b></td><td>暗黙水素でない原子を1つ</td><td>選択原子の形式電荷を <b>Formal Charge</b> の値に変更します。</td></tr>
+      <tr><td><b>Toggle Fixed Selected Atom</b></td><td>暗黙水素でない原子を1つ</td><td>UFF・表示整形でその原子を固定／固定解除します。固定原子は最小化中に動きません。</td></tr>
+      <tr><td><b>Delete Selected Atom</b></td><td>暗黙水素でない原子を1つ以上<span class="new">NEW</span></td><td>選択中の原子（複数可）と、それらにつながるすべての結合を削除します。複数選択していれば1回の操作でまとめて削除されます。固定原子・距離/角度/二面角拘束のインデックスも正しく再計算されます。</td></tr>
+    </tbody></table></div>
+    <h3>結合の操作</h3><div class="table-wrap"><table><thead><tr><th>ボタン</th><th>必要な選択</th><th>機能</th></tr></thead><tbody>
+      <tr><td><b>Create or Change Selected-Atom Bond</b></td><td>同一分子の暗黙水素でない原子を2つ</td><td>未結合なら新しい結合を作成、既に結合済みなら <b>Bond Order</b> の値へ変更します。原子価を超える変更は拒否されます（この操作は明示水素の自動置換は行いません）。</td></tr>
+      <tr><td><b>Delete Selected Bond</b></td><td>暗黙水素でない結合を1つ</td><td>選択中の結合を削除します。結合を選択している場合だけ表示されます。</td></tr>
+      <tr><td><b>Valence: no over-valence warnings</b></td><td>対象分子</td><td>分子の原子価チェックの結果です。警告がある場合は、問題の概要がこの場所に表示されます。</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section id="constraints"><h2>UFF Constraints（UFF 拘束）</h2><p class="sub">Partial UFF の最小化中に、距離・角度・ねじれ角を目標値へ保つための拘束を設定します。</p>
+    <div class="table-wrap"><table><thead><tr><th>種類</th><th>選択</th><th>入力</th><th>操作</th></tr></thead><tbody>
+      <tr><td><b>Distance</b></td><td>原子を2つ</td><td>Target Distance (Å)、Constraint Strength</td><td><b>Set Target</b> は入力値を使います。<b>Use Current</b> は現在の原子間距離を目標値として登録します。選択中の拘束だけ、または全拘束を削除できます。</td></tr>
+      <tr><td><b>Angle</b></td><td>原子を3つ。<b>アクティブ原子が中心</b></td><td>Target Angle (°)、Angle Strength</td><td><b>Set Target</b>／<b>Use Current</b> で登録または更新します。中央原子を最後に選択してアクティブにするのが要点です。</td></tr>
+      <tr><td><b>Dihedral</b></td><td>結合で一続きの原子を4つ</td><td>Target Dihedral (°)、Dihedral Strength</td><td>曖昧でない4原子の結合経路を選択します。<b>Use Current</b> は現在のねじれ角を目標値にします。</td></tr>
+    </tbody></table></div>
+    <p class="note"><b>Strength（強さ）:</b> 大きいほど目標値を強く維持します。極端に大きい値は最小化を不安定にすることがあるため、まず既定値付近から試すのが安全です。</p>
+  </section>
+
+  <section id="uff"><h2>Partial UFF（力場最小化）</h2><p class="sub">対応する原子型を持つ分子で、実装済みの UFF 項を使って構造を最小化するパネルです。原子型に問題がある場合は「Not ready for UFF」と理由が表示されます。</p>
+    <p class="ok"><span class="new">NEW</span> <b>Minimize Partial UFF</b> と <b>Start Live UFF</b> は、実行対象の分子にまだ暗黙水素が残っていれば、計算の前に自動的に明示水素へ変換してから続行します。UFF は明示原子しか見ないため、以前は事前に <b>Make Implicit Hydrogens Explicit</b> を手動で実行しておく必要がありましたが、この手順は不要になりました。明示水素が既に揃っている分子では何も変化しません。</p>
+    <h3>状態・エネルギー表示</h3><div class="table-wrap"><table><thead><tr><th>表示／入力</th><th>意味</th></tr></thead><tbody>
+      <tr><td><b>Atom typing: ready</b></td><td>UFF 用の原子型を割り当てられた状態です。型ごとの個数も表示されます。</td></tr>
+      <tr><td><b>Show Energy Breakdown</b></td><td>結合伸縮、角度、ねじれ、面外、van der Waals の項別エネルギーを表示します。項によっては明示水素が必要です。</td></tr>
+      <tr><td><b>Partial UFF total</b></td><td>実装済みの UFF 項の合計エネルギーです。静電項は含まれません。</td></tr>
+      <tr><td><b>UFF Iterations</b></td><td>通常の最小化で試行する最大反復数です。</td></tr>
+      <tr><td><b>UFF Max Atom Step</b></td><td>1 回の受理ステップで原子が動ける最大距離です。大きくしすぎると不安定になり得ます。</td></tr>
+      <tr><td><b>Gradient Tolerance / Energy Tolerance</b></td><td>最小化の収束判定です。小さいほど厳密ですが、時間がかかる場合があります。</td></tr>
+      <tr><td><b>UFF Optimizer</b></td><td><b>Steepest Descent</b>（安定な基準法）、<b>FIRE2</b>（対話操作向け）、<b>L-BFGS</b>（最終収束向け）を選びます。</td></tr>
+      <tr><td><b>UFF Compute Backend</b></td><td><b>Auto</b> は Rust が利用可能なら Rust、なければ Python を使います。<b>Rust</b> はネイティブ DLL が必要です。</td></tr>
+    </tbody></table></div>
+    <h3>通常・対話型の操作</h3><div class="table-wrap"><table><thead><tr><th>ボタン／設定</th><th>必要な選択</th><th>機能</th></tr></thead><tbody>
+      <tr><td><b>Minimize Partial UFF</b></td><td>対象分子</td><td>分子全体を最小化します。失敗した場合は元の座標を保持します。実行後は前後の座標、エネルギー、反復数、終了理由が表示されます。</td></tr>
+      <tr><td><b>Show Before / Show After</b></td><td>最小化履歴あり</td><td>直近の最小化の前後座標を表示します。比較や復帰に使えます。</td></tr>
+      <tr><td><b>Start Live UFF / Stop Live UFF</b></td><td>動かす原子を1つ選択</td><td>選択原子の移動中、周辺を繰り返し緩和する対話モードを開始／停止します。<span class="new">NEW</span> 計算中にエラー（collinear 等）が起きた場合は、ステータスバーへの表示に加えて、次に Live UFF を開始するまでこのパネル内にエラーメッセージが残り続けます。以前はエラーが起きても何も表示されず無言で停止していました。<span class="new">NEW</span> 「原子を動かすと自動開始」中にエラーが起きた場合、同じ原子への自動再開始は 1.5 秒間控えられます（手動の Start Live UFF ボタンは対象外）。ドラッグ中・キャンセル・移動確定のたびにエラーが連発して操作を妨げないようにするためです。このエラーはステータスバー表示のみで、マウス直下にポップアップは出ません（出す場合、確定/キャンセル操作の前にポップアップを閉じるクリックが余分に必要になるため）。</td></tr>
+      <tr><td><b>Jitter All Atom Positions</b><span class="new">NEW</span></td><td>対象分子</td><td>固定原子以外の全原子へ、<b>Jitter Magnitude (Å)</b>（既定 0.05 Å）までの小さなランダム変位を1回加えます。衝突（collinear）など、厳密に縮退した開始形状から抜け出す応急対応です。実行前に自動でスナップショットを保存するため、気に入らなければ <b>Restore Position Snapshot</b> で元に戻せます。</td></tr>
+      <tr><td><b>Relax Around Selected Atom</b></td><td>動かした原子を1つ</td><td>選択原子を一時的に固定し、周辺だけを少数ステップ緩和します。手動で原子を動かした直後の調整向けです。</td></tr>
+      <tr><td><b>Start Live UFF When Moving an Atom</b></td><td>設定</td><td>原子を動かすと Live UFF を自動開始し、落ち着いたら停止します。</td></tr>
+      <tr><td><b>Interactive UFF Steps</b></td><td>設定</td><td>手動の周辺緩和で実行するステップ数です。</td></tr>
+      <tr><td><b>Live Compute Budget / Live Update Interval / Maximum Settle Updates</b></td><td>設定</td><td>対話型 UFF の1回あたりの計算予算、更新間隔、移動後に落ち着くまでの最大更新回数を調整します。</td></tr>
+      <tr><td><b>Benchmark 1 UFF Step</b></td><td>対象分子</td><td>1 ステップの計算時間を測定し、推定更新周波数などを表示します。構造は変更しません。</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section id="relax"><h2>Display Relaxation &amp; Snapshot（表示用整形・スナップショット）</h2><p class="sub">高速な見た目用の整形と、座標の一時保存です。ここでの整形は UFF ではありません。</p>
+    <div class="table-wrap"><table><thead><tr><th>項目</th><th>機能</th></tr></thead><tbody>
+      <tr><td><b>Relax Iterations</b></td><td>表示用整形で使う反復回数です。</td></tr>
+      <tr><td><b>Relax Display Geometry</b></td><td>見た目を整える簡易緩和を実行します。固定にした原子は動かしません。物理的な最小化が必要なら Partial UFF を使います。</td></tr>
+      <tr><td><b>Save Position Snapshot</b></td><td>現在の全原子座標を1組保存します。次の保存で上書きされます。</td></tr>
+      <tr><td><b>Restore Position Snapshot</b></td><td>保存済みの座標へ戻します。スナップショットがある場合だけ表示されます。</td></tr>
+      <tr><td><b>Jitter All Atom Positions</b><span class="new">NEW</span></td><td>固定原子以外の全原子へ小さなランダム変位（<b>Jitter Magnitude (Å)</b>）を1回加えます。Partial UFF パネルにも同じボタンがあります。</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section id="display"><h2>Display &amp; Mesh Settings（表示・メッシュ設定）</h2><p class="sub">色、見た目、次回読み込み・作成時のメッシュ密度を調整します。</p>
+    <h3>次回インポート時の既定値（既存分子への反映には Rebuild が必要）</h3>
+    <div class="table-wrap"><table><thead><tr><th>項目</th><th>機能・適用範囲</th></tr></thead><tbody>
+      <tr><td><b>Elements in Blend Mol</b></td><td>現在シーン内の Blend Mol 原子について、元素ごとの色を設定します。変更は該当元素の表示へ直ちに反映されます。</td></tr>
+      <tr><td><b>Reset to CPK Colors</b></td><td>元素色を標準的な CPK 配色へ戻します。</td></tr>
+      <tr><td><b>Atom Scale</b></td><td>原子球の大きさです。次回の読み込み・作成時の既定値として使われます。既存の分子に適用するには下の <b>Rebuild Selected Molecule</b> を使います。</td></tr>
+      <tr><td><b>Bond Radius</b></td><td>結合の太さです。次回の読み込み・作成時の既定値として使われます。既存の分子には <b>Rebuild Selected Molecule</b> で反映します。</td></tr>
+      <tr><td><b>Show Implicit Hydrogens</b></td><td>暗黙水素の表示を切り替えます。これは編集可能な水素原子を作る操作ではありません。既存の分子には <b>Rebuild Selected Molecule</b> で反映します。</td></tr>
+      <tr><td><b>Rebuild Selected Molecule</b><span class="new">NEW</span></td><td>保存済みの分子データから、選択中の分子の表示（原子・結合オブジェクト）を作り直します。上記 Atom Scale / Bond Radius / Show Implicit Hydrogens を既存の分子へ反映したい場合や、手作業で削除・変更した表示を復旧したい場合に使います。<b>Import / Export</b> パネルではなく、こちらに配置されています。</td></tr>
+    </tbody></table></div>
+    <h3>マテリアル（即時反映）<span class="new">NEW</span></h3>
+    <div class="table-wrap"><table><thead><tr><th>項目</th><th>機能・適用範囲</th></tr></thead><tbody>
+      <tr><td><b>Roughness / Metallic</b></td><td>原子・結合のマテリアルの粗さ／金属感です。スライダーを動かすと、Rebuild なしで即座にシーン内のすべての Blend Mol 分子へ反映されます（共有マテリアルのノード入力を直接更新するだけで、ジオメトリの再構築は発生しません）。</td></tr>
+    </tbody></table></div>
+    <h3>メッシュ詳細（次回インポート時の既定値）</h3>
+    <div class="table-wrap"><table><thead><tr><th>項目</th><th>機能・適用範囲</th></tr></thead><tbody>
+      <tr><td><b>Atom Segments / Atom Rings</b></td><td>原子球メッシュの分割数です。大きいほど滑らかになりますが、重くなります。</td></tr>
+      <tr><td><b>Bond Sides / Bond Length Segments</b></td><td>結合円柱の断面分割数／長さ方向の分割数です。</td></tr>
+      <tr><td><b>Subdivision Levels</b></td><td>後から追加するサブディビジョンサーフェスのレベルです。</td></tr>
+      <tr><td><b>Add Subdivision Surface</b></td><td>現在シーン内の Blend Mol 原子・結合へサブディビジョンサーフェスを追加または更新します。</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section id="selection"><h2>選択の早見表</h2><div class="table-wrap"><table><thead><tr><th>やりたいこと</th><th>選択方法</th></tr></thead><tbody>
+      <tr><td>分子全体の操作、出力、座標同期</td><td>対象分子の原子、結合、または分子ルートのいずれかを選択</td></tr>
+      <tr><td>元素・電荷の変更、固定、結合原子追加</td><td>暗黙水素でない原子を1つ選択</td></tr>
+      <tr><td>原子の削除<span class="new">NEW</span></td><td>暗黙水素でない原子を1つ、または <kbd>Shift</kbd> クリックなどで複数選択</td></tr>
+      <tr><td>結合の作成・結合次数変更、距離拘束</td><td>同じ分子の暗黙水素でない原子を2つ選択</td></tr>
+      <tr><td>結合の削除</td><td>暗黙水素でない結合そのものを1つ選択</td></tr>
+      <tr><td>角度拘束</td><td>原子を3つ選び、中心にしたい原子をアクティブにする</td></tr>
+      <tr><td>二面角拘束</td><td>結合で一続きになる原子を4つ選択</td></tr>
+    </tbody></table></div>
+    <p class="ok"><b>基本の流れ:</b> 新規作成または読み込み → 原子・結合の編集 → 座標を整える → Partial UFF または書き出し、という順が分かりやすい使い方です（暗黙水素の明示化は、UFF 系の操作であれば自動的に行われます）。</p>
+  </section>
+  <footer>対象: Blend Mol の現行 UI（0.1.81 時点）。UI 表示名・機能はアドオン実装に合わせて記載しています。</footer>
+</main>
+</body>
+</html>

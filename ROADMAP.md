@@ -66,8 +66,8 @@
   - Python へのフォールバックがあるため全 OS で動く前提にするか、
     `platforms` で明示するかを決める。フェーズ 7 の配布方針と合わせる。
 - [ ] **リポジトリを片付ける**
-  - `blend_mol_manual.html`（日本語の操作マニュアル）を git に入れる。置き場所は
-    `docs/` を候補にする。機能を追加したら、あわせて更新する手順にする。
+  - [x] `blend_mol_manual.html`（日本語の操作マニュアル）を `docs/` に置いて git 管理に入れた。
+    機能を追加したら、あわせて更新する。
   - ルートにある .mol 3つを `tests/fixtures/` へ移し、テストとベンチマークの
     参照パスを更新する（`tests/test_molfile.py`、`tests/test_uff.py`、
     `benchmarks/*`）。
