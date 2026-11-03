@@ -32,7 +32,8 @@ from uff import angle_bend_energy, bond_stretch_energy, partial_energy, torsion_
 
 OPENBABEL_BIN = Path(r"C:\Program Files\OpenBabel-3.1.1")
 UFF_PRM_FIXTURE = ROOT / "tests" / "openbabel_uff_311.prm"
-KCAL_TO_KJ = 4.184
+# Open Babel's own conversion factor (forcefield.h), used for its kJ/mol output.
+KCAL_TO_KJ = 4.1868
 
 # Neutral structures whose heteroatom has no dedicated Open Babel SMARTS
 # rule for this exact coordination (a tetravalent P=O / S=O center without

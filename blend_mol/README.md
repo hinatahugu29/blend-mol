@@ -164,7 +164,11 @@ displayed as a ball-and-stick model.
   which may precede several moves in a manually started session; it is not a
   per-drag Undo transaction. Changed molecular topology prevents restoration.
 - Includes an in-panel UFF preparation check. It currently assigns conservative
-  UFF types for H/C/N/O/P/S/F/Cl/Br/I in conservative bonding states and reports atoms outside that supported subset.
+  UFF types for H/B/C/N/O/F/Si/P/S/Cl/Br/I and Ge/Sn/As/Sb/Se/Te in conservative
+  bonding states, following Open Babel 3.1.1's rules (resonant `_R` types only
+  for aromatic atoms; amide, aniline, phenol and ester N/O as sp2; aromatic
+  bonds at order 1.5 and amide C-N at 1.41), and reports atoms outside that
+  supported subset.
   For structures with all hydrogens explicit, it also shows the partial UFF
   bond-stretch, angle-bend, proper-torsion, inversion and van der Waals
   energies, and can minimize that explicitly labelled subset with fixed atoms.

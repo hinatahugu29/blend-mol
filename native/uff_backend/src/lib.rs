@@ -3,7 +3,8 @@ use std::thread;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn blend_mol_uff_abi_version() -> u32 {
-    1
+    // 2: inversion terms carry (K, c0, c1, c2) instead of a single barrier.
+    2
 }
 
 struct PartialResult {
@@ -169,7 +170,7 @@ fn residual_energy(
     torsion_atoms: &[u32],
     torsion_parameters: &[f64],
     inversion_atoms: &[u32],
-    inversion_barriers: &[f64],
+    inversion_parameters: &[f64],
 ) -> Option<f64> {
     let mut energy = 0.0;
     for term in 0..torsion_parameters.len() / 3 {
@@ -207,7 +208,7 @@ fn residual_energy(
         let barrier = torsion_parameters[term * 3 + 2];
         energy += barrier * (1.0 - cosine_ideal * (periodicity * angle).cos());
     }
-    for term in 0..inversion_barriers.len() {
+    for term in 0..inversion_parameters.len() / 4 {
         let center = point(coordinates, inversion_atoms[term * 4] as usize);
         let first = point(coordinates, inversion_atoms[term * 4 + 1] as usize);
         let second = point(coordinates, inversion_atoms[term * 4 + 2] as usize);
@@ -228,7 +229,11 @@ fn residual_energy(
             .sum::<f64>()
             / (normal_length * outer_length);
         let angle = sine.clamp(-1.0, 1.0).asin();
-        energy += inversion_barriers[term] * (1.0 - angle.cos());
+        let k = inversion_parameters[term * 4];
+        let c0 = inversion_parameters[term * 4 + 1];
+        let c1 = inversion_parameters[term * 4 + 2];
+        let c2 = inversion_parameters[term * 4 + 3];
+        energy += k * (c0 + c1 * angle.cos() + c2 * (2.0 * angle).cos());
     }
     Some(energy)
 }
@@ -244,7 +249,7 @@ pub unsafe extern "C" fn blend_mol_residual_energy_gradient(
     torsion_parameters: *const f64,
     inversion_count: usize,
     inversion_atoms: *const u32,
-    inversion_barriers: *const f64,
+    inversion_parameters: *const f64,
     active_count: usize,
     active_atoms: *const u32,
     finite_difference: f64,
@@ -255,7 +260,7 @@ pub unsafe extern "C" fn blend_mol_residual_energy_gradient(
         || out_energy.is_null()
         || out_gradient.is_null()
         || (torsion_count > 0 && (torsion_atoms.is_null() || torsion_parameters.is_null()))
-        || (inversion_count > 0 && (inversion_atoms.is_null() || inversion_barriers.is_null()))
+        || (inversion_count > 0 && (inversion_atoms.is_null() || inversion_parameters.is_null()))
         || (active_count > 0 && active_atoms.is_null())
         || !finite_difference.is_finite()
         || finite_difference <= 0.0
@@ -280,10 +285,10 @@ pub unsafe extern "C" fn blend_mol_residual_energy_gradient(
     } else {
         unsafe { slice::from_raw_parts(inversion_atoms, inversion_count * 4) }
     };
-    let inversion_barriers = if inversion_count == 0 {
+    let inversion_parameters = if inversion_count == 0 {
         &[]
     } else {
-        unsafe { slice::from_raw_parts(inversion_barriers, inversion_count) }
+        unsafe { slice::from_raw_parts(inversion_parameters, inversion_count * 4) }
     };
     let active_atoms = if active_count == 0 {
         &[]
@@ -304,7 +309,7 @@ pub unsafe extern "C" fn blend_mol_residual_energy_gradient(
         torsion_atoms,
         torsion_parameters,
         inversion_atoms,
-        inversion_barriers,
+        inversion_parameters,
     ) else {
         return 3;
     };
@@ -338,7 +343,7 @@ pub unsafe extern "C" fn blend_mol_residual_energy_gradient(
                         torsion_atoms,
                         torsion_parameters,
                         inversion_atoms,
-                        inversion_barriers,
+                        inversion_parameters,
                     );
                     perturbed[*coordinate_index] -= finite_difference;
                     let Some(higher) = higher else { return None };

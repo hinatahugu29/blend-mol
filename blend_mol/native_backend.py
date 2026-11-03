@@ -46,7 +46,7 @@ def _load_library():
         library = ctypes.CDLL(str(_library_path()))
         library.blend_mol_uff_abi_version.argtypes = []
         library.blend_mol_uff_abi_version.restype = ctypes.c_uint32
-        if library.blend_mol_uff_abi_version() != 1:
+        if library.blend_mol_uff_abi_version() != 2:
             raise RuntimeError("unsupported native UFF ABI")
         library.blend_mol_vdw_energy_gradient.argtypes = [
             ctypes.c_size_t,
@@ -129,7 +129,7 @@ def vdw_energy_gradient(
 def residual_energy_gradient(
     coordinates: list[list[float]] | list[tuple[float, float, float]],
     torsions: list[tuple[int, int, int, int, int, float, float]],
-    inversions: list[tuple[int, int, int, int, float]],
+    inversions: list[tuple[int, int, int, int, float, float, float, float]],
     active_atoms: set[int],
     finite_difference: float,
 ) -> tuple[float, list[list[float]]] | None:
@@ -149,7 +149,8 @@ def residual_energy_gradient(
         value for term in torsions for value in (float(term[4]), term[5], term[6])
     ]
     inversion_atoms = [index for term in inversions for index in term[:4]]
-    inversion_barriers = [term[4] for term in inversions]
+    # (K, c0, c1, c2) per term; ABI 2.
+    inversion_barriers = [value for term in inversions for value in term[4:8]]
     active = sorted(active_atoms)
     coordinate_array = (ctypes.c_double * len(coordinate_values))(*coordinate_values)
     torsion_atom_array = (ctypes.c_uint32 * len(torsion_atoms))(*torsion_atoms)

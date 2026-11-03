@@ -782,7 +782,9 @@ class TestUffTyping(unittest.TestCase):
             ),
             (Bond(0, 1, 2), Bond(0, 2, 1), Bond(0, 3, 1)),
         )
-        self.assertEqual(type_molecule(formaldehyde).types[0], "C_R")
+        # C_2, not C_R: since 0.1.87 resonant types are reserved for aromatic
+        # atoms, as in Open Babel 3.1.1 (which types any carbonyl C as C_2).
+        self.assertEqual(type_molecule(formaldehyde).types[0], "C_2")
 
     def test_linear_sp_atom_with_further_substituents_minimizes(self):
         # Any linear (sp, coordination "1") center with a substituent beyond

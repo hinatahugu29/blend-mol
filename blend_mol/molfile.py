@@ -83,11 +83,13 @@ class MolfileError(ValueError):
 _SMILES_ELEMENTS = SMILES_ELEMENTS
 _SMILES_ORGANIC_SUBSET = {"B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"}
 _SMILES_BRACKET = re.compile(
-    r"(?P<isotope>\d+)?(?P<element>[A-Z][a-z]?|[bcnops]|\*)"
+    r"(?P<isotope>\d+)?(?P<element>[A-Z][a-z]?|se|as|[bcnops]|\*)"
     r"(?P<chirality>@@|@TH[12]|@)?(?P<hydrogens>H(?P<hcount>\d*))?"
     r"(?P<charge>[+-](?:\d+)?|\d+[+-]|\+\+|--)?"
 )
-_SMILES_AROMATIC = {"b": "B", "c": "C", "n": "N", "o": "O", "p": "P", "s": "S"}
+# Single-letter aromatic atoms may appear without brackets; "se" and "as"
+# only inside brackets ([se], [as]).
+_SMILES_AROMATIC = {"b": "B", "c": "C", "n": "N", "o": "O", "p": "P", "s": "S", "se": "Se", "as": "As"}
 
 
 def _relax_xy(

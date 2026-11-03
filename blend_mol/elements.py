@@ -27,7 +27,8 @@ class ElementInfo:
     # Neutral-state valence used for implicit hydrogen counts.
     typical_valence: int
     # Highest bond-order sum accepted before flagging an over-valence error.
-    # Differs from typical_valence only for hypervalent S and P.
+    # Differs from typical_valence only for hypervalent S/P and their heavier
+    # group partners (Se, Te, As, Sb).
     max_valence: int
     # Whether the SMILES reader accepts this element.
     smiles: bool
@@ -51,6 +52,14 @@ _ELEMENT_RECORDS = (
     ElementInfo("I", (0.36, 0.08, 0.62, 1.0), 0.43, 1.39, 1, 1, True),
     ElementInfo("B", (1.00, 0.71, 0.71, 1.0), 0.33, 0.84, 3, 3, True),
     ElementInfo("Si", (0.94, 0.78, 0.63, 1.0), 0.40, 1.11, 4, 4, True),
+    # Heavier main-group elements with a UFF type (0.1.87). Appended after
+    # Si so the editor list indices of existing elements do not change.
+    ElementInfo("Ge", (0.40, 0.56, 0.56, 1.0), 0.41, 1.20, 4, 4, True),
+    ElementInfo("Sn", (0.40, 0.50, 0.50, 1.0), 0.45, 1.39, 4, 4, True),
+    ElementInfo("As", (0.74, 0.50, 0.89, 1.0), 0.41, 1.19, 3, 5, True),
+    ElementInfo("Sb", (0.62, 0.39, 0.71, 1.0), 0.45, 1.39, 3, 5, True),
+    ElementInfo("Se", (1.00, 0.63, 0.00, 1.0), 0.41, 1.20, 2, 6, True),
+    ElementInfo("Te", (0.83, 0.48, 0.00, 1.0), 0.45, 1.38, 2, 6, True),
     # SMILES/MOL wildcard: a placeholder for "any atom". It takes no implicit
     # hydrogens and has no UFF type, so UFF refuses a molecule containing it.
     ElementInfo("*", (0.55, 0.55, 0.55, 1.0), 0.25, 0.80, 0, 8, True, in_editor=False),

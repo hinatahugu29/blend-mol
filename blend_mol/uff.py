@@ -23,6 +23,7 @@ _KJ_TO_KCAL = 1.0 / 4.184
 _ENERGY_TOLERANCE_STREAK = 3
 
 try:
+    from .embed import _rings
     from .elements import charged_typical_valence
     from .molfile import Atom, Molecule
     from .native_backend import (
@@ -30,6 +31,7 @@ try:
         vdw_energy_gradient as _native_vdw_energy_gradient,
     )
 except ImportError:  # Enables the small module to be tested outside Blender.
+    from embed import _rings
     from elements import charged_typical_valence
     from molfile import Atom, Molecule
     from native_backend import (
@@ -74,6 +76,8 @@ UFF_PARAMETERS = {
     "P_3+3": UffParameter("P_3+3", 1.101, 93.8, 4.147, 0.305, 2.863, 2.4, 1.25, 5.463),
     "P_3+5": UffParameter("P_3+5", 1.056, 109.47, 4.147, 0.305, 2.863, 2.4, 1.25, 5.463),
     "S_3+2": UffParameter("S_3+2", 1.064, 92.1, 4.035, 0.274, 2.703, 0.484, 1.25, 6.928),
+    "S_R": UffParameter("S_R", 1.077, 92.2, 4.035, 0.274, 2.703, 0.0, 1.25, 6.928),
+    "S_2": UffParameter("S_2", 0.854, 120.0, 4.035, 0.274, 2.703, 0.0, 1.25, 6.928),
     "Si3": UffParameter("Si3", 1.117, 109.47, 4.295, 0.402, 2.323, 1.225, 1.25, 4.168),
     "B_2": UffParameter("B_2", 0.828, 120.0, 4.083, 0.18, 1.755, 0.0, 2.0, 5.11),
     "B_3": UffParameter("B_3", 0.838, 109.47, 4.083, 0.18, 1.755, 0.0, 2.0, 5.11),
@@ -84,14 +88,22 @@ UFF_PARAMETERS = {
     "Cl": UffParameter("Cl", 1.044, 180.0, 3.947, 0.227, 2.348, 0.0, 1.25, 8.564),
     "Br": UffParameter("Br", 1.192, 180.0, 4.189, 0.251, 2.519, 0.0, 0.70, 7.790),
     "I_": UffParameter("I_", 1.382, 180.0, 4.500, 0.339, 2.650, 0.0, 0.20, 6.822),
+    # Heavier main-group elements (0.1.87), one generic type each, as in
+    # Open Babel 3.1.1's UFF.prm atom typing.
+    "Ge3": UffParameter("Ge3", 1.197, 109.47, 4.280, 0.379, 2.789, 0.701, 0.7, 4.051),
+    "Sn3": UffParameter("Sn3", 1.398, 109.47, 4.392, 0.567, 2.961, 0.199, 0.2, 3.987),
+    "As3+3": UffParameter("As3+3", 1.211, 92.1, 4.230, 0.309, 2.864, 1.5, 0.7, 5.188),
+    "Sb3+3": UffParameter("Sb3+3", 1.407, 91.6, 4.420, 0.449, 2.704, 1.1, 0.2, 4.899),
+    "Se3+2": UffParameter("Se3+2", 1.190, 90.6, 4.205, 0.291, 2.764, 0.335, 0.7, 6.428),
+    "Te3+2": UffParameter("Te3+2", 1.386, 90.25, 4.470, 0.398, 2.882, 0.3, 0.2, 5.816),
 }
 
-# Torsion-relevant hybridisation per atom type ("1" linear, "2"/"R" sp2 or
-# resonant -- Open Babel's own ipar[0] field treats both the same for
-# torsion dispatch, "3" sp3). This cannot be derived from the type name's
-# last character for P/S: their "+N" suffix (P_3+3, P_3+5, S_3+2) marks
-# oxidation state, not hybridisation, and happens to collide with the
-# sp2/sp3 digits used by every other element's naming convention.
+# Hybridisation per atom type ("1" linear, "2"/"R" sp2 or resonant, "3"
+# sp3), used for torsion dispatch and for choosing the angle-bend form.
+# Open Babel reads it from the type name's third character. It cannot be
+# taken from the last character: the "+N" suffix of P_3+3, S_3+2, Se3+2 and
+# Te3+2 marks oxidation state and collides with the sp2/sp3 digits (a
+# three-coordinate S_3+2 was bent with the trigonal form until 0.1.87).
 _TORSION_COORDINATION: dict[str, str] = {
     "H_": "1", "H_b": "1",
     "C_3": "3", "C_2": "2", "C_1": "1", "C_R": "R",
@@ -99,17 +111,28 @@ _TORSION_COORDINATION: dict[str, str] = {
     "O_3": "3", "O_2": "2", "O_1": "1", "O_R": "R",
     "F_": "1",
     "P_3+3": "3", "P_3+5": "3",
-    "S_3+2": "3",
+    "S_3+2": "3", "S_R": "R", "S_2": "2",
     "Si3": "3",
     "B_2": "2", "B_3": "3",
     "Cl": "1", "Br": "1", "I_": "1",
+    "Ge3": "3", "Sn3": "3", "As3+3": "3", "Sb3+3": "3", "Se3+2": "3", "Te3+2": "3",
 }
+
+
+def _coordination(type_name: str) -> str:
+    return _TORSION_COORDINATION.get(type_name, type_name[-1])
 
 
 @dataclass(frozen=True)
 class UffTypingReport:
     types: tuple[str | None, ...]
     messages: tuple[str, ...]
+    # Bond order UFF uses for each molecule.bonds entry: 1.5 in an aromatic
+    # ring, 1.41 for an amide C-N, otherwise the stored order (Open Babel 3.1.1).
+    bond_orders: tuple[float, ...] = ()
+
+    def bond_order(self, index: int, stored: int) -> float:
+        return self.bond_orders[index] if index < len(self.bond_orders) else float(stored)
 
     @property
     def ready(self) -> bool:
@@ -308,6 +331,9 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
             # with the same reference this project validates energies
             # against, rather than inventing an unvalidated phosphonate type.
             atom_type = "P_3+3"
+        elif atom.element == "S" and atom.formal_charge == 0 and degree == 1 and max_order == 2:
+            # [S^2] S_2: thiocarbonyl sulfur (C=S).
+            atom_type = "S_2"
         elif atom.element == "S" and atom.formal_charge == 0 and (
             (degree <= 2 and max_order == 1) or (degree in (3, 4) and max_order == 2)
         ):
@@ -327,6 +353,19 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
             # Tetracoordinate boron is almost always anionic (BF4-,
             # borohydrides); formal_charge is not restricted to 0 here.
             atom_type = "B_3"
+        elif atom.element in {"Ge", "Sn"} and atom.formal_charge == 0 and degree <= 4 and max_order == 1:
+            # Like silicon: one generic sp3 type, single bonds only.
+            atom_type = {"Ge": "Ge3", "Sn": "Sn3"}[atom.element]
+        elif atom.element in {"As", "Sb"} and atom.formal_charge == 0 and (
+            (degree <= 3 and max_order == 1) or (degree == 4 and max_order == 2)
+        ):
+            # Same coordinations as P_3+3 (arsine/stibine, R3As=O).
+            atom_type = {"As": "As3+3", "Sb": "Sb3+3"}[atom.element]
+        elif atom.element in {"Se", "Te"} and atom.formal_charge == 0 and (
+            (degree <= 2 and max_order == 1) or (degree in (3, 4) and max_order == 2)
+        ):
+            # Same coordinations as S_3+2 (selenide/telluride, selenoxide).
+            atom_type = {"Se": "Se3+2", "Te": "Te3+2"}[atom.element]
         elif atom.element in {"Cl", "Br"} and atom.formal_charge == 0 and degree <= 1:
             atom_type = atom.element
         elif atom.element == "I" and atom.formal_charge == 0 and degree <= 1:
@@ -344,19 +383,117 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
                 )
         else:
             types.append(atom_type)
-    # UFF has separate resonant types. This mirrors the conservative resonance
-    # pass used in Avogadro: only an sp2-like C/N/O adjacent to another sp2 or
-    # resonant atom is upgraded; carbonyl-like terminal oxygen is left alone.
-    resonant_types = {"C_2": "C_R", "N_2": "N_R", "N_3": "N_R", "O_2": "O_R", "O_3": "O_R"}
+    # Resonant (_R) types follow Open Babel 3.1.1's UFF.prm, which reserves
+    # them for aromatic atoms ([c] C_R, [n] N_R, [o] O_R, [s] S_R). A
+    # conjugated but non-aromatic C stays C_2 (until 0.1.87 it became C_R,
+    # e.g. every carbonyl carbon, which shifted torsions by tens of kJ/mol).
+    aromatic_atoms, aromatic_bonds = _perceive_aromaticity(molecule, neighbors)
+    aromatic_type = {"C": "C_R", "N": "N_R", "O": "O_R", "S": "S_R"}
+    for index in aromatic_atoms:
+        element = molecule.atoms[index].element
+        if element in aromatic_type and types[index] is not None:
+            types[index] = aromatic_type[element]
+    rings = _small_rings(molecule, neighbors)
     for index, atom in enumerate(molecule.atoms):
-        current = types[index]
-        if current not in resonant_types:
+        # [#6H1D3r5] C_R: a CH with three connections in a five-membered ring.
+        if (
+            atom.element == "C" and types[index] is not None and len(neighbors[index]) == 3
+            and sum(1 for n, _o in neighbors[index] if molecule.atoms[n].element == "H") == 1
+            and any(len(ring) == 5 and index in ring for ring in rings)
+        ):
+            types[index] = "C_R"
+    # Open Babel perceives a single-bonded N or O next to a multiply bonded
+    # or aromatic atom as sp2 (amide, aniline, phenol, ester, enamine, nitro).
+    sp2_types = {"C_2", "C_R", "N_2", "N_R", "O_2", "O_R", "S_2", "S_R"}
+    snapshot = list(types)
+    for index, atom in enumerate(molecule.atoms):
+        if snapshot[index] not in ("N_3", "O_3") or len(neighbors[index]) > 3:
             continue
-        if atom.element == "O" and len(neighbors[index]) == 1:
+        if any(snapshot[n] in sp2_types for n, _order in neighbors[index]):
+            types[index] = "N_2" if snapshot[index] == "N_3" else "O_2"
+    bond_orders = []
+    for index, bond in enumerate(molecule.bonds):
+        if (min(bond.atom_a, bond.atom_b), max(bond.atom_a, bond.atom_b)) in aromatic_bonds:
+            bond_orders.append(1.5)
+        elif _is_amide_bond(molecule, neighbors, bond):
+            bond_orders.append(1.41)
+        else:
+            bond_orders.append(float(bond.order))
+    return UffTypingReport(tuple(types), tuple(messages), tuple(bond_orders))
+
+
+def _small_rings(molecule: Molecule, neighbors) -> list[frozenset[int]]:
+    plain = [[n for n, _order in attached] for attached in neighbors]
+    return _rings(len(molecule.atoms), plain, max_size=8)
+
+
+def _is_amide_bond(molecule: Molecule, neighbors, bond) -> bool:
+    """C(=O)-N single bond (Open Babel's OBBond::IsAmide)."""
+    if bond.order != 1:
+        return False
+    pair = (bond.atom_a, bond.atom_b)
+    elements = {molecule.atoms[i].element for i in pair}
+    if elements != {"C", "N"}:
+        return False
+    carbon = bond.atom_a if molecule.atoms[bond.atom_a].element == "C" else bond.atom_b
+    return any(molecule.atoms[n].element == "O" and order == 2 for n, order in neighbors[carbon])
+
+
+def _ring_pi_electrons(molecule: Molecule, neighbors, ring: frozenset[int], ring_atoms: set[int]) -> int | None:
+    """Pi electrons a ring contributes in a simple Hueckel model, or None if not conjugated."""
+    total = 0
+    for index in ring:
+        atom = molecule.atoms[index]
+        orders = neighbors[index]
+        if any(order >= 3 for _n, order in orders):
+            return None
+        double_partners = [n for n, order in orders if order == 2]
+        if double_partners:
+            partner = double_partners[0]
+            # A double bond inside this ring, or to an atom of a fused ring,
+            # puts one electron in the ring; an exocyclic C=O/C=S/C=N none.
+            total += 1 if (partner in ring or partner in ring_atoms) else 0
+        elif atom.element in ("N", "P") and atom.formal_charge == 0:
+            total += 2
+        elif atom.element in ("O", "S", "Se", "Te") and atom.formal_charge == 0 and len(orders) == 2:
+            total += 2
+        elif atom.element == "C" and atom.formal_charge == -1:
+            total += 2
+        elif atom.element == "C" and atom.formal_charge == 1:
+            total += 0
+        elif atom.element == "B" and atom.formal_charge == 0:
+            total += 0
+        else:
+            return None
+    return total
+
+
+def _perceive_aromaticity(molecule: Molecule, neighbors) -> tuple[set[int], set[tuple[int, int]]]:
+    """Atoms and bonds of 5-7 membered (and fused-pair) rings with 4n+2 pi electrons."""
+    rings = [ring for ring in _small_rings(molecule, neighbors) if 5 <= len(ring) <= 7]
+    ring_atoms = set().union(*rings) if rings else set()
+    candidates = list(rings)
+    for first in range(len(rings)):
+        for second in range(first + 1, len(rings)):
+            if len(rings[first] & rings[second]) >= 2:
+                candidates.append(rings[first] | rings[second])
+    bonded = {
+        (min(bond.atom_a, bond.atom_b), max(bond.atom_a, bond.atom_b)) for bond in molecule.bonds
+    }
+    aromatic_atoms: set[int] = set()
+    aromatic_bonds: set[tuple[int, int]] = set()
+    for ring in candidates:
+        electrons = _ring_pi_electrons(molecule, neighbors, ring, ring_atoms)
+        if electrons is None or electrons % 4 != 2:
             continue
-        if any(types[neighbor] and types[neighbor].endswith(("_2", "_R")) for neighbor, _order in neighbors[index]):
-            types[index] = resonant_types[current]
-    return UffTypingReport(tuple(types), tuple(messages))
+        aromatic_atoms |= ring
+        component_rings = [r for r in rings if r <= ring]
+        for r in component_rings:
+            for a in r:
+                for b in r:
+                    if a < b and (a, b) in bonded:
+                        aromatic_bonds.add((a, b))
+    return aromatic_atoms, aromatic_bonds
 
 
 def _implicit_hydrogen_count(molecule: Molecule) -> int:
@@ -374,12 +511,13 @@ def _implicit_hydrogen_count(molecule: Molecule) -> int:
     return count
 
 
-def _effective_bond_order(first: UffParameter, second: UffParameter, stored_order: int) -> float:
-    """UFF uses bond order 1.5 between two resonance-typed atoms."""
+def _effective_bond_order(first: UffParameter, second: UffParameter, order: float) -> float:
+    """The order UFF uses for a bond; callers pass UffTypingReport.bond_order().
 
-    if first.name.endswith("_R") and second.name.endswith("_R"):
-        return 1.5
-    return float(stored_order)
+    Until 0.1.87 any two resonance-typed atoms got 1.5 here, including a
+    non-ring bond between aromatic atoms (biphenyl), which Open Babel keeps at 1.
+    """
+    return float(order)
 
 
 def _equilibrium_bond_length(first: UffParameter, second: UffParameter, order: float) -> float:
@@ -413,13 +551,13 @@ def bond_stretch_energy(
         return UffBondStretchReport(None, 0, tuple(messages))
 
     energy = 0.0
-    for bond in molecule.bonds:
+    for bond_index, bond in enumerate(molecule.bonds):
         first_type = typing.types[bond.atom_a]
         second_type = typing.types[bond.atom_b]
         first = UFF_PARAMETERS[first_type]
         second = UFF_PARAMETERS[second_type]
         equilibrium = _equilibrium_bond_length(
-            first, second, _effective_bond_order(first, second, bond.order)
+            first, second, _effective_bond_order(first, second, typing.bond_order(bond_index, bond.order))
         )
         force_constant = 664.12 * first.effective_charge * second.effective_charge / equilibrium ** 3
         first_position = molecule.atoms[bond.atom_a].position
@@ -459,10 +597,12 @@ def _uff_angle_energy(
 ) -> float:
     """UFF's coordination-specific bend term."""
 
-    coordination = center_type[-1]
+    coordination = _coordination(center_type)
     if coordination == "1" or degree == 1:
         return force_constant * (1.0 + math.cos(observed))
-    if coordination in {"2", "R"} and degree == 3:
+    # Open Babel picks the trigonal form from the type's coordination alone, so
+    # two-coordinate sp2 centres (imine N_2, ester O_2, thiophene S_R) use it too.
+    if coordination in {"2", "R"} and degree >= 2:
         short_angle_repulsion = math.exp(-20.0 * (observed - ideal + 0.25)) * _KJ_TO_KCAL
         return (
             force_constant / 9.0 * (1.0 - math.cos(3.0 * observed))
@@ -487,10 +627,12 @@ def _uff_angle_derivative(
 ) -> float:
     """Derivative of the coordination-specific angle energy with respect to theta."""
 
-    coordination = center_type[-1]
+    coordination = _coordination(center_type)
     if coordination == "1" or degree == 1:
         return -force_constant * math.sin(observed)
-    if coordination in {"2", "R"} and degree == 3:
+    # Open Babel picks the trigonal form from the type's coordination alone, so
+    # two-coordinate sp2 centres (imine N_2, ester O_2, thiophene S_R) use it too.
+    if coordination in {"2", "R"} and degree >= 2:
         short_angle_repulsion = math.exp(-20.0 * (observed - ideal + 0.25)) * _KJ_TO_KCAL
         return force_constant / 3.0 * math.sin(3.0 * observed) - 20.0 * short_angle_repulsion
     sine = math.sin(ideal)
@@ -505,11 +647,15 @@ def _uff_angle_derivative(
     )
 
 
-def _build_neighbors(molecule: Molecule) -> tuple[tuple[tuple[int, int], ...], ...]:
-    neighbors: list[list[tuple[int, int]]] = [[] for _atom in molecule.atoms]
-    for bond in molecule.bonds:
-        neighbors[bond.atom_a].append((bond.atom_b, bond.order))
-        neighbors[bond.atom_b].append((bond.atom_a, bond.order))
+def _build_neighbors(
+    molecule: Molecule, typing: UffTypingReport | None = None,
+) -> tuple[tuple[tuple[int, float], ...], ...]:
+    """(neighbour, bond order) per atom; UFF's effective orders when typing is given."""
+    neighbors: list[list[tuple[int, float]]] = [[] for _atom in molecule.atoms]
+    for index, bond in enumerate(molecule.bonds):
+        order = typing.bond_order(index, bond.order) if typing is not None else bond.order
+        neighbors[bond.atom_a].append((bond.atom_b, order))
+        neighbors[bond.atom_b].append((bond.atom_a, order))
     return tuple(tuple(attached) for attached in neighbors)
 
 
@@ -527,7 +673,7 @@ def angle_bend_energy(
     if messages:
         return UffAngleBendReport(None, 0, tuple(messages))
 
-    neighbors = _build_neighbors(molecule) if _neighbors is None else _neighbors
+    neighbors = _build_neighbors(molecule, typing) if _neighbors is None else _neighbors
 
     energy = 0.0
     terms = 0
@@ -605,12 +751,14 @@ def _chalcogen_sp3_torsion_barrier(parameter: UffParameter) -> float | None:
 
     if parameter.name.startswith("O_"):
         return 2.0
-    if parameter.name.startswith("S_"):
+    if parameter.name.startswith(("S_", "Se", "Te")):
         return 6.8
     return None
 
 
-def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int, float, float] | None:
+def _torsion_parameters(
+    first: UffParameter, second: UffParameter, bond_order: float = 1.0,
+) -> tuple[int, float, float] | None:
     """Return periodicity, cos(n*phi0), and UFF torsional barrier.
 
     Dispatch mirrors Open Babel 3.1.1's OBForceFieldUFF::SetupCalculations:
@@ -651,12 +799,10 @@ def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int,
             periodicity, ideal, second_barrier = 2, math.radians(90.0), chalcogen_second
         return periodicity, math.cos(periodicity * ideal), 0.5 * math.sqrt(first_barrier * second_barrier)
     if first_is_sp2 and second_is_sp2:
-        if first_coordination == "R" and second_coordination == "R":
-            aromatic_order = 1.5
-        else:
-            aromatic_order = 1.0
+        # Open Babel scales by the central bond's UFF order (1.5 aromatic,
+        # 1.41 amide, 2 for a double bond), not by the atom types.
         barrier = 5.0 * math.sqrt(first.sp2_torsion_barrier * second.sp2_torsion_barrier)
-        barrier *= 0.5 * (1.0 + 4.18 * math.log(aromatic_order))
+        barrier *= 0.5 * (1.0 + 4.18 * math.log(max(bond_order, 1.0)))
         return 2, 1.0, barrier
     if (first_is_sp2 and second_is_sp3) or (first_is_sp3 and second_is_sp2):
         # The barrier itself (0.5 kcal/mol) is unchanged by the chalcogen
@@ -668,6 +814,26 @@ def _torsion_parameters(first: UffParameter, second: UffParameter) -> tuple[int,
             periodicity, ideal = 2, 90.0
         return periodicity, math.cos(periodicity * math.radians(ideal)), 0.5
     return None
+
+
+def _torsion_bonds(molecule: Molecule, typing: UffTypingReport):
+    """(bond, parameters) for every bond that carries torsion terms."""
+    for bond_index, bond in enumerate(molecule.bonds):
+        if bond.order != 1 and typing.bond_order(bond_index, bond.order) == bond.order:
+            # A genuine double/triple bond (not aromatic or amide).
+            if not TORSIONS_ABOUT_MULTIPLE_BONDS:
+                continue
+        parameters = _torsion_parameters(
+            UFF_PARAMETERS[typing.types[bond.atom_a]], UFF_PARAMETERS[typing.types[bond.atom_b]],
+            typing.bond_order(bond_index, bond.order),
+        )
+        if parameters is not None:
+            yield bond, parameters
+
+
+# Open Babel defines torsions about double bonds too; kept switchable while
+# that is verified against it at non-planar geometries.
+TORSIONS_ABOUT_MULTIPLE_BONDS = True
 
 
 def torsion_energy(
@@ -689,15 +855,8 @@ def torsion_energy(
         neighbors[bond.atom_b].append((bond.atom_a, bond.order))
     energy = 0.0
     terms = 0
-    for bond in molecule.bonds:
-        if bond.order != 1:
-            continue
+    for bond, parameters in _torsion_bonds(molecule, typing):
         first_center, second_center = bond.atom_a, bond.atom_b
-        parameters = _torsion_parameters(
-            UFF_PARAMETERS[typing.types[first_center]], UFF_PARAMETERS[typing.types[second_center]]
-        )
-        if parameters is None:
-            continue
         periodicity, cosine_ideal, barrier = parameters
         for first_outer, _first_order in neighbors[first_center]:
             if first_outer == second_center:
@@ -811,6 +970,50 @@ def _out_of_plane_angle(center, first, second, outer) -> float | None:
     return math.asin(max(-1.0, min(1.0, sine)))
 
 
+# Group 15 inversion (Open Babel 3.1.1, forcefielduff.cpp): equilibrium
+# out-of-plane angle per element, K = 22 kcal/mol split over three terms.
+_GROUP15_INVERSION_ANGLE = {"P": 84.4339, "As": 86.9735, "Sb": 87.7047}
+_CARBON_NITROGEN_OXYGEN_INVERSION = {"N_3", "N_R", "N_2", "O_R", "O_2", "C_R", "C_2"}
+
+
+def _inversion_coefficients(center_type: str, element: str, neighbour_types) -> tuple[float, float, float, float] | None:
+    """(K, c0, c1, c2) for E = K (c0 + c1 cos w + c2 cos 2w), per inversion term."""
+    if center_type in _CARBON_NITROGEN_OXYGEN_INVERSION:
+        barrier = 6.0
+        if center_type in {"C_R", "C_2"} and any(t == "O_2" for t in neighbour_types):
+            barrier = 50.0
+        # 1 - cos w: minimum at a planar centre.
+        return barrier / 3.0, 1.0, -1.0, 0.0
+    if center_type in {"P_3+3", "As3+3", "Sb3+3"}:
+        phi = math.radians(_GROUP15_INVERSION_ANGLE[element])
+        c1 = -4.0 * math.cos(phi)
+        c2 = 1.0
+        c0 = -c1 * math.cos(phi) + c2 * math.cos(2.0 * phi)
+        return 22.0 / 3.0, c0, c1, c2
+    return None
+
+
+def _inversion_terms(molecule: Molecule, types) -> list[tuple[int, int, int, int, float, float, float, float]]:
+    """(center, plane a, plane b, outer, K, c0, c1, c2) for every three-coordinate centre."""
+    neighbors: list[list[int]] = [[] for _ in molecule.atoms]
+    for bond in molecule.bonds:
+        neighbors[bond.atom_a].append(bond.atom_b)
+        neighbors[bond.atom_b].append(bond.atom_a)
+    terms = []
+    for center_index, attached in enumerate(neighbors):
+        if len(attached) != 3:
+            continue
+        coefficients = _inversion_coefficients(
+            types[center_index], molecule.atoms[center_index].element, [types[i] for i in attached],
+        )
+        if coefficients is None:
+            continue
+        for outer_offset in range(3):
+            plane = [attached[offset] for offset in range(3) if offset != outer_offset]
+            terms.append((center_index, plane[0], plane[1], attached[outer_offset]) + coefficients)
+    return terms
+
+
 def out_of_plane_energy(
     molecule: Molecule, _typing: UffTypingReport | None = None, _check_hydrogens: bool = True,
 ) -> UffOutOfPlaneReport:
@@ -824,36 +1027,19 @@ def out_of_plane_energy(
     if messages:
         return UffOutOfPlaneReport(None, 0, tuple(messages))
 
-    neighbors: list[list[int]] = [[] for _ in molecule.atoms]
-    for bond in molecule.bonds:
-        neighbors[bond.atom_a].append(bond.atom_b)
-        neighbors[bond.atom_b].append(bond.atom_a)
     energy = 0.0
     terms = 0
-    for center_index, attached in enumerate(neighbors):
-        if len(attached) != 3:
-            continue
-        center_type = typing.types[center_index]
-        if center_type in {"N_3", "N_R", "N_2", "O_R", "O_2", "C_R", "C_2"}:
-            barrier = 6.0
-            if center_type in {"C_R", "C_2"} and any(
-                typing.types[index] == "O_2" for index in attached
-            ):
-                barrier = 50.0
-        else:
-            continue
-        for outer_offset in range(3):
-            plane = [attached[offset] for offset in range(3) if offset != outer_offset]
-            angle = _out_of_plane_angle(
-                molecule.atoms[center_index].position,
-                molecule.atoms[plane[0]].position,
-                molecule.atoms[plane[1]].position,
-                molecule.atoms[attached[outer_offset]].position,
-            )
-            if angle is None:
-                return UffOutOfPlaneReport(None, terms, ("UFF: collinear neighbors cannot form an inversion plane",))
-            energy += barrier / 3.0 * (1.0 - math.cos(angle))
-            terms += 1
+    for center, first, second, outer, k, c0, c1, c2 in _inversion_terms(molecule, typing.types):
+        angle = _out_of_plane_angle(
+            molecule.atoms[center].position,
+            molecule.atoms[first].position,
+            molecule.atoms[second].position,
+            molecule.atoms[outer].position,
+        )
+        if angle is None:
+            return UffOutOfPlaneReport(None, terms, ("UFF: collinear neighbors cannot form an inversion plane",))
+        energy += k * (c0 + c1 * math.cos(angle) + c2 * math.cos(2.0 * angle))
+        terms += 1
     return UffOutOfPlaneReport(energy, terms, ())
 
 
@@ -912,25 +1098,18 @@ def numeric_gradient_atom_indices(
         neighbors[bond.atom_a].append((bond.atom_b, bond.order))
         neighbors[bond.atom_b].append((bond.atom_a, bond.order))
     active: set[int] = set()
-    for bond in molecule.bonds:
-        if bond.order != 1:
-            continue
+    # Same term selection as torsion_energy / out_of_plane_energy, so every
+    # atom a numeric term depends on is perturbed (including group 15 centres).
+    for bond, _parameters in _torsion_bonds(molecule, typing):
         first_center, second_center = bond.atom_a, bond.atom_b
-        if _torsion_parameters(
-            UFF_PARAMETERS[typing.types[first_center]], UFF_PARAMETERS[typing.types[second_center]]
-        ) is None:
-            continue
         first_outer = [index for index, _order in neighbors[first_center] if index != second_center]
         second_outer = [index for index, _order in neighbors[second_center] if index != first_center]
         if first_outer and second_outer:
             active.update((first_center, second_center))
             active.update(first_outer)
             active.update(second_outer)
-    inversion_types = {"N_3", "N_R", "N_2", "O_R", "O_2", "C_R", "C_2"}
-    for center_index, attached in enumerate(neighbors):
-        if len(attached) == 3 and typing.types[center_index] in inversion_types:
-            active.add(center_index)
-            active.update(index for index, _order in attached)
+    for center, first, second, outer, *_coefficients in _inversion_terms(molecule, typing.types):
+        active.update((center, first, second, outer))
     return active
 
 
@@ -938,7 +1117,7 @@ def _residual_terms(
     molecule: Molecule, _typing: UffTypingReport | None = None,
 ) -> tuple[
     list[tuple[int, int, int, int, int, float, float]],
-    list[tuple[int, int, int, int, float]],
+    list[tuple[int, int, int, int, float, float, float, float]],
 ]:
     """Build coordinate-independent torsion and inversion terms for native evaluation."""
 
@@ -950,15 +1129,8 @@ def _residual_terms(
         neighbors[bond.atom_a].append((bond.atom_b, bond.order))
         neighbors[bond.atom_b].append((bond.atom_a, bond.order))
     torsions = []
-    for bond in molecule.bonds:
-        if bond.order != 1:
-            continue
+    for bond, parameters in _torsion_bonds(molecule, typing):
         first_center, second_center = bond.atom_a, bond.atom_b
-        parameters = _torsion_parameters(
-            UFF_PARAMETERS[typing.types[first_center]], UFF_PARAMETERS[typing.types[second_center]]
-        )
-        if parameters is None:
-            continue
         periodicity, cosine_ideal, barrier = parameters
         for first_outer, _first_order in neighbors[first_center]:
             if first_outer == second_center:
@@ -970,21 +1142,7 @@ def _residual_terms(
                     first_outer, first_center, second_center, second_outer,
                     periodicity, cosine_ideal, barrier,
                 ))
-    inversion_types = {"N_3", "N_R", "N_2", "O_R", "O_2", "C_R", "C_2"}
-    inversions = []
-    for center_index, attached in enumerate(neighbors):
-        if len(attached) == 3 and typing.types[center_index] in inversion_types:
-            barrier = 6.0
-            if typing.types[center_index] in {"C_R", "C_2"} and any(
-                typing.types[index] == "O_2" for index, _order in attached
-            ):
-                barrier = 50.0
-            attached_indices = [index for index, _order in attached]
-            for outer_offset in range(3):
-                plane = [attached_indices[offset] for offset in range(3) if offset != outer_offset]
-                inversions.append((
-                    center_index, plane[0], plane[1], attached_indices[outer_offset], barrier / 3.0,
-                ))
+    inversions = _inversion_terms(molecule, typing.types)
     return torsions, inversions
 
 
@@ -1001,7 +1159,7 @@ def prepare_uff_context(molecule: Molecule) -> PreparedUffContext:
     typing = type_molecule(molecule)
     torsions, inversions = _residual_terms(molecule, typing)
     numeric_atoms = numeric_gradient_atom_indices(molecule, typing)
-    neighbors = _build_neighbors(molecule)
+    neighbors = _build_neighbors(molecule, typing)
     vdw_pairs = _build_vdw_pairs(molecule, typing) if typing.ready else ()
     return PreparedUffContext(
         _uff_topology_key(molecule), typing, tuple(torsions), tuple(inversions),
@@ -1037,15 +1195,8 @@ def _unverified_torsion_energy_gradient(
         )
 
     energy = 0.0
-    for bond in molecule.bonds:
-        if bond.order != 1:
-            continue
+    for bond, parameters in _torsion_bonds(molecule, typing):
         first_center, second_center = bond.atom_a, bond.atom_b
-        parameters = _torsion_parameters(
-            UFF_PARAMETERS[typing.types[first_center]], UFF_PARAMETERS[typing.types[second_center]]
-        )
-        if parameters is None:
-            continue
         periodicity, cosine_ideal, barrier = parameters
         for first_outer, _first_order in neighbors[first_center]:
             if first_outer == second_center:
@@ -1112,7 +1263,7 @@ def _angle_energy_gradient(
     gradient = [[0.0, 0.0, 0.0] for _atom in molecule.atoms]
     if messages:
         return None, gradient, tuple(messages)
-    neighbors = _build_neighbors(molecule) if _neighbors is None else _neighbors
+    neighbors = _build_neighbors(molecule, typing) if _neighbors is None else _neighbors
     energy = 0.0
     for center_index, attached in enumerate(neighbors):
         center_type = typing.types[center_index]
@@ -1147,7 +1298,7 @@ def _angle_energy_gradient(
                 # own 180 degree equilibrium where sin(theta) underflows to
                 # 0 — a removable singularity, not a genuinely degenerate
                 # geometry, so it must not raise like a true collinear error.
-                is_linear_center = center_type[-1] == "1" or len(attached) == 1
+                is_linear_center = _coordination(center_type) == "1" or len(attached) == 1
                 if abs(sine_observed) < 1e-8 and not is_linear_center:
                     return None, gradient, ("UFF: collinear atoms have no stable angle gradient",)
                 force_constant = _angle_force_constant(
@@ -1200,13 +1351,13 @@ def _bond_vdw_energy_gradient(
         return None, gradient, tuple(messages)
 
     energy = 0.0
-    for bond in molecule.bonds:
+    for bond_index, bond in enumerate(molecule.bonds):
         first_parameter = UFF_PARAMETERS[typing.types[bond.atom_a]]
         second_parameter = UFF_PARAMETERS[typing.types[bond.atom_b]]
         equilibrium = _equilibrium_bond_length(
             first_parameter,
             second_parameter,
-            _effective_bond_order(first_parameter, second_parameter, bond.order),
+            _effective_bond_order(first_parameter, second_parameter, typing.bond_order(bond_index, bond.order)),
         )
         force_constant = (
             664.12 * first_parameter.effective_charge * second_parameter.effective_charge

@@ -42,6 +42,15 @@ Python/Rust equality tests and isolated/full-step benchmarks decide whether each
 kernel stays native. The currently dominant torsion/inversion residual remains
 Python work and is the next measured migration candidate.
 
+## Inversion term layout (ABI 2, 0.1.87)
+
+Inversion terms now carry four parameters, ``(K, c0, c1, c2)`` for
+``E = K (c0 + c1 cos w + c2 cos 2w)``, instead of one barrier. Carbon,
+nitrogen and oxygen keep ``(barrier/3, 1, -1, 0)``; group 15 centres
+(P, As, Sb) use Open Babel's equilibrium angle per element. The ABI version
+reported by ``blend_mol_uff_abi_version`` is 2, so an older DLL is refused and
+``Auto`` falls back to Python instead of misreading the arrays.
+
 ## Batched residual gradient (0.1.29)
 
 Torsion and inversion term definitions are prepared once in Python, then their

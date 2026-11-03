@@ -155,8 +155,11 @@ needed; this uses `tests/openbabel_uff_311.prm` as `BABEL_DATADIR`):
 python benchmarks\compare_openbabel_heteroatom_matrix.py
 ```
 
-Bond, angle, and torsion energies all match to within 0.5 kJ/mol for every
-molecule here (torsion within 0.1 kJ/mol), after fixing two dispatch bugs
+Bond, angle, and torsion energies match to within about 1.3 kJ/mol for every
+molecule here (torsion within 0.1 kJ/mol). Until 0.1.87 that was not true for
+dimethyl sulfoxide, whose angle term was 251 kJ/mol off (a three-coordinate
+S_3+2 used the trigonal form); this script did not print the per-term gap, so
+it went unnoticed. The torsion agreement came after fixing two dispatch bugs
 in `_torsion_parameters` found by reading Open Babel 3.1.1's own
 `forcefielduff.cpp` directly (see ROADMAP_HISTORY.md's 0.1.63 entry). The
 synthetic phosphine-oxide/DMSO geometries are hand-placed and not energy
@@ -173,6 +176,16 @@ with the same connectivity and per-atom bond-order totals:
 
 ```powershell
 python benchmarks\compare_openbabel_file_io.py
+```
+
+All UFF terms, including out-of-plane, plus the atom types, are compared
+against Open Babel for 24 molecules (Ge, Sn, As, Sb, Se, Te; group 15
+inversion; aromatic and merely conjugated typing), each at its embedded
+geometry and at a randomly perturbed copy so torsion and inversion terms are
+tested away from their minima. Energies use Open Babel's own 4.1868 kJ/kcal:
+
+```powershell
+python benchmarks\compare_openbabel_main_group.py
 ```
 
 SMILES starting geometries are evaluated on 17 molecules (clashes, bond
