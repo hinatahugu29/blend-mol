@@ -1,32 +1,40 @@
 # Blend Mol
 
-Blender 5.2+ extension prototype for importing V2000 MOL files and displaying
-their atom and bond graph as a ball-and-stick model.
+Blender 5.2+ extension for building, editing and UFF-optimizing molecules,
+displayed as a ball-and-stick model.
 
 ## Current scope
 
 - Imports atom coordinates, single/double/triple bonds, and formal charges
-  (including `M  CHG` records) from MDL V2000 MOL files.
+  (including `M  CHG` records) from MDL MOL files in V2000 or V3000 format.
+  Aromatic bonds (order 4) are converted to a single/double (Kekule) pattern;
+  an unassignable pattern is reported instead of imported.
 - Exports the selected molecule, including its current explicit atom positions,
-  bond orders, and formal charges, as an MDL V2000 MOL file.
+  bond orders, and formal charges, as an MDL MOL file. The Format option picks
+  V2000, V3000, or Auto (V3000 only above 999 atoms or bonds).
 - Exports atom elements and Cartesian coordinates as a standard XYZ file when
   only coordinate exchange is needed.
 - Exports a JSON validation report containing partial UFF atom types, energy
   terms, fixed atoms, and the most recent minimization log.
 - Starts a new molecule from an empty Blender scene, placing its first atom at
   the 3D cursor without importing a MOL file.
-- Imports XYZ atom coordinates without inventing bonds or implicit hydrogens;
-  bonds can then be created in Blend Mol.
+- Imports XYZ atom coordinates without implicit hydrogens. By default
+  (Perceive Bonds) single bonds are added between atoms closer than their
+  covalent radii plus 0.45 Å; bond orders are not inferred.
 - Imports PDB `ATOM` / `HETATM` coordinates and single bonds recorded in
-  `CONECT` entries, without inferring additional hydrogens.
+  `CONECT` entries, without inferring additional hydrogens. A file with no
+  `CONECT` records at all gets single bonds from distances instead (an
+  option on by default).
 - Exports the selected molecule's atom coordinates and connectivity as a PDB
   file with `HETATM`/`CONECT` records. PDB `CONECT` has no bond-order field,
   so re-importing it loses bond order and formal charges, the same way any
   other PDB import already does.
-- Imports the first V2000 structure record in an SDF file.
-- Exports the selected molecule as a single-record SD file (a V2000 block
-  followed by `$$$$`), preserving bond order and formal charges the same
-  way V2000 MOL export already does.
+- Imports every structure record (V2000 or V3000) in an SDF file as its own
+  molecule, up to Max Records (100 by default), optionally skipping unreadable
+  records and arranging the molecules in a row. Each record's data items are
+  kept on the molecule and written back on SDF export.
+- Exports every selected molecule as one record each in an SD file,
+  preserving bond order, formal charges and stored data items.
 - Creates a basic organic molecule directly from SMILES, including common
   elements, formal charges, branches, ring closures, and single/double/triple
   bonds, plus common aromatic notation such as `c1ccccc1`. Aromatic bonds are

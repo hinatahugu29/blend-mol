@@ -164,6 +164,21 @@ minimized, so their van der Waals totals disagree sharply (steric clashes
 dominate the r^-12 term); that is a benchmark geometry artifact, not a
 code issue -- bond/angle/torsion are the meaningful comparison here.
 
+The same Open Babel install also cross-checks file I/O in both directions:
+Blend Mol's V3000 MOL and multi-record SDF output must read back in Open Babel
+as the same canonical SMILES, and Open Babel's V2000/V3000/SDF output
+(including files with aromatic order-4 bonds, built from Open Babel's own
+MOL2 aromaticity since it never writes order 4 itself) must read in Blend Mol
+with the same connectivity and per-atom bond-order totals:
+
+```powershell
+python benchmarks\compare_openbabel_file_io.py
+```
+
+Imidazole is reported as a NOTE, not a failure: from an aromatic MOL with
+implicit hydrogens, Blend Mol puts the NH on the other ring nitrogen than
+Open Babel does, and both tautomers are valid.
+
 With Avogadro 2.0.0 installed in its default Windows location, compare energy
 components against its bundled Open Babel 3 UFF implementation:
 

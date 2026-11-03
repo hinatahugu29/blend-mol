@@ -8,9 +8,15 @@ import math
 import re
 
 try:
-    from .elements import MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, charged_typical_valence
+    from .elements import (
+        COVALENT_RADII, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, UNKNOWN_COVALENT_RADIUS,
+        charged_typical_valence,
+    )
 except ImportError:  # Enables the small module to be tested outside Blender.
-    from elements import MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, charged_typical_valence
+    from elements import (
+        COVALENT_RADII, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, UNKNOWN_COVALENT_RADIUS,
+        charged_typical_valence,
+    )
 
 
 @dataclass(frozen=True)
@@ -300,6 +306,131 @@ def _smiles_layout(
     return [tuple(position) for position in centered]
 
 
+class KekulizationError(MolfileError):
+    """Raised when aromatic bonds cannot be given a valid single/double pattern."""
+
+
+# Atoms that, in a molfile with implicit hydrogens, may be either pyridine-like
+# (take a double bond) or pyrrole-like (carry an implicit H and stay single):
+# a neutral N or P with exactly two aromatic bonds and nothing else.
+_OPTIONAL_KEKULE_ELEMENTS = {"N", "P"}
+_KEKULE_SEARCH_BUDGET = 200_000
+
+
+def _kekulize(
+    atoms: list[Atom] | tuple[Atom, ...],
+    bonds: list[Bond],
+    aromatic_bond_indices: list[int],
+    *,
+    allow_implicit_pyrrole_h: bool = False,
+) -> list[int]:
+    """Assign double bonds to aromatic bonds in place; return atoms left without one.
+
+    Every aromatic bond must hold order 1 on entry. An atom needs exactly one
+    aromatic double bond when its typical valence still has room after its
+    current sigma bonds (pyridine N, benzene C) and it has no double bond
+    already (a pyridone ring carbon with exocyclic C=O). Atoms whose valence
+    is already full (thiophene S, furan O, pyrrole [nH]) never take one.
+
+    A greedy pass in the given bond order is tried first, so a result that
+    was already valid is kept unchanged; if it leaves an atom unmatched, an
+    exact search finds a pattern where every such atom gets one double bond.
+    With ``allow_implicit_pyrrole_h`` a neutral N/P with only two aromatic
+    bonds may also stay single (pyrrole-type NH written with implicit H), as
+    may a terminal O/S with one aromatic bond (carboxylic acid OH). Which
+    ring N ends up carrying the H is then one valid tautomer, not
+    necessarily the one another program would pick.
+    """
+    bond_order_sum = [0] * len(atoms)
+    has_double = [False] * len(atoms)
+    aromatic_set = set(aromatic_bond_indices)
+    aromatic_degree = [0] * len(atoms)
+    for index, bond in enumerate(bonds):
+        bond_order_sum[bond.atom_a] += bond.order
+        bond_order_sum[bond.atom_b] += bond.order
+        if index in aromatic_set:
+            aromatic_degree[bond.atom_a] += 1
+            aromatic_degree[bond.atom_b] += 1
+        elif bond.order >= 2:
+            has_double[bond.atom_a] = has_double[bond.atom_b] = True
+    required: set[int] = set()
+    optional: set[int] = set()
+    for atom_index, atom in enumerate(atoms):
+        if not aromatic_degree[atom_index] or has_double[atom_index]:
+            continue
+        target = _target_valence(atom)
+        if target is None or target - bond_order_sum[atom_index] < 1:
+            continue
+        pyrrole_like = (
+            atom.element in _OPTIONAL_KEKULE_ELEMENTS and atom.formal_charge == 0
+            and bond_order_sum[atom_index] == 2 and aromatic_degree[atom_index] == 2
+        )
+        # A terminal O/S on an "aromatic" bond (MOL2-style carboxylic acid or
+        # thioacid) may be either the C=O or the C-OH with an implicit H.
+        terminal_chalcogen = (
+            atom.element in ("O", "S") and atom.formal_charge == 0
+            and bond_order_sum[atom_index] == 1 and aromatic_degree[atom_index] == 1
+        )
+        if allow_implicit_pyrrole_h and (pyrrole_like or terminal_chalcogen):
+            optional.add(atom_index)
+        else:
+            required.add(atom_index)
+    candidates = required | optional
+    adjacency: dict[int, list[tuple[int, int]]] = {atom_index: [] for atom_index in candidates}
+    for bond_index in aromatic_bond_indices:
+        bond = bonds[bond_index]
+        if bond.atom_a in candidates and bond.atom_b in candidates:
+            adjacency[bond.atom_a].append((bond.atom_b, bond_index))
+            adjacency[bond.atom_b].append((bond.atom_a, bond_index))
+
+    partner: dict[int, int] = {}
+    for bond_index in aromatic_bond_indices:
+        bond = bonds[bond_index]
+        if (
+            bond.atom_a in candidates and bond.atom_b in candidates
+            and bond.atom_a not in partner and bond.atom_b not in partner
+        ):
+            partner[bond.atom_a] = partner[bond.atom_b] = bond_index
+    if not required - partner.keys():
+        chosen = set(partner.values())
+    else:
+        chosen = None
+        matched: dict[int, int] = {}
+        budget = [_KEKULE_SEARCH_BUDGET]
+
+        def solve() -> bool:
+            budget[0] -= 1
+            if budget[0] < 0:
+                return False
+            free = [atom_index for atom_index in required if atom_index not in matched]
+            if not free:
+                return True
+            # Most constrained atom first keeps the search near-linear for
+            # ordinary fused ring systems.
+            atom_index = min(
+                free,
+                key=lambda index: sum(1 for other, _bond in adjacency[index] if other not in matched),
+            )
+            for other, bond_index in adjacency[atom_index]:
+                if other in matched:
+                    continue
+                matched[atom_index] = matched[other] = bond_index
+                if solve():
+                    return True
+                del matched[atom_index], matched[other]
+            return False
+
+        if solve():
+            chosen = set(matched.values())
+        else:
+            chosen = set(partner.values())
+    for bond_index in chosen:
+        bond = bonds[bond_index]
+        bonds[bond_index] = Bond(bond.atom_a, bond.atom_b, 2, bond.stereo)
+    double_atoms = {atom for index in chosen for atom in (bonds[index].atom_a, bonds[index].atom_b)}
+    return sorted(required - double_atoms)
+
+
 def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
     """Read a small, dependency-free organic SMILES subset into an editable graph.
 
@@ -448,38 +579,10 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
         raise MolfileError("SMILES ends with a bond symbol.")
     if not atoms:
         raise MolfileError("SMILES contains no atoms.")
-    double_bonded_atoms = {
-        atom_index
-        for bond in bonds if bond.order == 2
-        for atom_index in (bond.atom_a, bond.atom_b)
-    }
-    # Every aromatic bond still holds its unpromoted order (1) here, so this
-    # sum is each atom's current sigma-bond count before any of them gets a
-    # Kekule double bond.
-    bond_order_sum = [0] * len(atoms)
-    for bond in bonds:
-        bond_order_sum[bond.atom_a] += bond.order
-        bond_order_sum[bond.atom_b] += bond.order
-    for bond_index in aromatic_bond_indices:
-        bond = bonds[bond_index]
-        if bond.atom_a in double_bonded_atoms or bond.atom_b in double_bonded_atoms:
-            continue
-        # A 3-substituted aromatic atom (e.g. a pyrrole/purine-style nitrogen
-        # bearing a ring-exocyclic substituent) donates its lone pair into
-        # the ring and must keep both ring bonds single in any valid Kekule
-        # structure -- promoting either one here would push it a bond order
-        # over its valence (e.g. a trisubstituted neutral N already at 3).
-        target_a = _max_legitimate_valence(atoms[bond.atom_a])
-        target_b = _max_legitimate_valence(atoms[bond.atom_b])
-        if (
-            (target_a is not None and bond_order_sum[bond.atom_a] + 1 > target_a)
-            or (target_b is not None and bond_order_sum[bond.atom_b] + 1 > target_b)
-        ):
-            continue
-        bonds[bond_index] = Bond(bond.atom_a, bond.atom_b, 2, bond.stereo)
-        double_bonded_atoms.update((bond.atom_a, bond.atom_b))
-        bond_order_sum[bond.atom_a] += 1
-        bond_order_sum[bond.atom_b] += 1
+    # SMILES spells pyrrole-type NH explicitly ([nH]), so every aromatic atom
+    # with free valence must take a double bond; if no full pattern exists the
+    # best partial one is kept (the unmatched atoms get an implicit H).
+    _kekulize(atoms, bonds, aromatic_bond_indices)
     positions = _smiles_layout(len(atoms), bonds, [atom.chirality for atom in atoms])
     return Molecule(
         name,
@@ -543,11 +646,55 @@ def _parse_bond(line: str, line_number: int, atom_count: int) -> Bond:
         raise MolfileError(f"Bond record on line {line_number} is invalid.") from exc
     if not 0 <= atom_a < atom_count or not 0 <= atom_b < atom_count:
         raise MolfileError(f"Bond record on line {line_number} references an unknown atom.")
-    if order not in {1, 2, 3}:
+    if order not in _MOLFILE_BOND_ORDERS:
         raise MolfileError(
             f"Bond record on line {line_number} has unsupported order {order}."
         )
     return Bond(atom_a=atom_a, atom_b=atom_b, order=order)
+
+
+# 1-3 are stored as-is; 4 (aromatic) is converted to single/double on read.
+_MOLFILE_BOND_ORDERS = {1, 2, 3, 4}
+_AROMATIC_BOND_ORDER = 4
+
+
+def _resolve_aromatic_bonds(molecule: Molecule) -> Molecule:
+    """Replace molfile aromatic bonds (order 4) with a Kekule single/double pattern."""
+    aromatic = [index for index, bond in enumerate(molecule.bonds) if bond.order == _AROMATIC_BOND_ORDER]
+    if not aromatic:
+        return molecule
+    bonds = [
+        Bond(bond.atom_a, bond.atom_b, 1, bond.stereo) if bond.order == _AROMATIC_BOND_ORDER else bond
+        for bond in molecule.bonds
+    ]
+    unmatched = _kekulize(molecule.atoms, bonds, aromatic, allow_implicit_pyrrole_h=True)
+    if unmatched:
+        listed = ", ".join(f"{index + 1} ({molecule.atoms[index].element})" for index in unmatched[:8])
+        raise KekulizationError(
+            "Aromatic bonds (order 4) cannot be assigned alternating single/double bonds; "
+            f"no double bond fits atom {listed}. Check hydrogens and formal charges."
+        )
+    return Molecule(molecule.name, molecule.atoms, tuple(bonds))
+
+
+def _counts_version(lines: list[str]) -> str | None:
+    if len(lines) < 4:
+        return None
+    if "V3000" in lines[3]:
+        return "V3000"
+    if "V2000" in lines[3]:
+        return "V2000"
+    return None
+
+
+def _read_molfile_lines(lines: list[str], fallback_name: str) -> Molecule:
+    """Read one V2000 or V3000 connection table, resolving aromatic bonds."""
+    version = _counts_version(lines)
+    if version == "V3000":
+        return _resolve_aromatic_bonds(_read_v3000_lines(lines, fallback_name))
+    if version == "V2000":
+        return _resolve_aromatic_bonds(_read_v2000_lines(lines, fallback_name))
+    raise MolfileError("Only MDL Molfile V2000 and V3000 files are supported.")
 
 
 def _read_v2000_lines(lines: list[str], fallback_name: str) -> Molecule:
@@ -570,33 +717,211 @@ def _read_v2000_lines(lines: list[str], fallback_name: str) -> Molecule:
     return Molecule(name=lines[0].strip() or fallback_name, atoms=atoms, bonds=bonds)
 
 
-def read_v2000(path: str | Path) -> Molecule:
-    """Read the atom coordinates and single/double/triple bonds from a V2000 MOL."""
+def _v3000_logical_lines(lines: list[str]) -> list[str]:
+    """Return ``M  V30`` payloads with ``-`` continuation lines joined."""
+    payloads: list[str] = []
+    pending = ""
+    for line in lines[4:]:
+        if line.startswith("M  END"):
+            break
+        if not line.startswith("M  V30"):
+            continue
+        content = line[6:].strip()
+        if content.endswith("-"):
+            pending += content[:-1]
+            continue
+        payloads.append((pending + content).strip())
+        pending = ""
+    if pending:
+        raise MolfileError("V3000 record ends inside a continued line.")
+    return payloads
+
+
+def _v3000_fields(text: str) -> tuple[list[str], dict[str, str]]:
+    """Split a V3000 record into positional fields and KEY=value properties."""
+    positional: list[str] = []
+    properties: dict[str, str] = {}
+    for field in re.findall(r'"[^"]*"|\S+', text):
+        if "=" in field and not field.startswith('"'):
+            key, value = field.split("=", 1)
+            properties[key.upper()] = value
+        else:
+            positional.append(field.strip('"'))
+    return positional, properties
+
+
+def _read_v3000_lines(lines: list[str], fallback_name: str) -> Molecule:
+    """Read atoms, bonds and CHG= charges from a V3000 connection table."""
+    atoms: list[Atom] = []
+    bonds: list[Bond] = []
+    atom_ids: dict[int, int] = {}
+    block = None
+    counts: tuple[int, int] | None = None
+    for payload in _v3000_logical_lines(lines):
+        upper = payload.upper()
+        if upper.startswith("BEGIN "):
+            block = upper.split()[1]
+            continue
+        if upper.startswith("END "):
+            block = None
+            continue
+        if upper.startswith("COUNTS"):
+            fields = payload.split()
+            try:
+                counts = (int(fields[1]), int(fields[2]))
+            except (IndexError, ValueError) as exc:
+                raise MolfileError("V3000 COUNTS line is invalid.") from exc
+            continue
+        if block == "ATOM":
+            positional, properties = _v3000_fields(payload)
+            try:
+                atom_id = int(positional[0])
+                element = positional[1]
+                position = (float(positional[2]), float(positional[3]), float(positional[4]))
+                charge = int(properties.get("CHG", "0"))
+            except (IndexError, ValueError) as exc:
+                raise MolfileError(f"V3000 atom record is invalid: {payload!r}") from exc
+            if not element or element.startswith("[") or element.upper() in {"L", "NOT"}:
+                raise MolfileError(f"V3000 atom {atom_id} uses an atom list, which is not supported.")
+            if atom_id in atom_ids:
+                raise MolfileError(f"V3000 atom index {atom_id} appears twice.")
+            atom_ids[atom_id] = len(atoms)
+            atoms.append(Atom(element, position, charge))
+        elif block == "BOND":
+            positional, _properties = _v3000_fields(payload)
+            try:
+                order = int(positional[1])
+                first, second = int(positional[2]), int(positional[3])
+            except (IndexError, ValueError) as exc:
+                raise MolfileError(f"V3000 bond record is invalid: {payload!r}") from exc
+            if order not in _MOLFILE_BOND_ORDERS:
+                raise MolfileError(f"V3000 bond {positional[0]} has unsupported order {order}.")
+            if first not in atom_ids or second not in atom_ids:
+                raise MolfileError(f"V3000 bond {positional[0]} references an unknown atom.")
+            bonds.append(Bond(atom_ids[first], atom_ids[second], order))
+    if counts is None:
+        raise MolfileError("V3000 file has no COUNTS line.")
+    if counts != (len(atoms), len(bonds)):
+        raise MolfileError(
+            f"V3000 COUNTS says {counts[0]} atoms and {counts[1]} bonds, "
+            f"but {len(atoms)} atoms and {len(bonds)} bonds were found."
+        )
+    return Molecule(lines[0].strip() or fallback_name, tuple(atoms), tuple(bonds))
+
+
+def _read_text_lines(path: str | Path) -> list[str]:
     source = Path(path)
     try:
-        lines = source.read_text(encoding="utf-8-sig").splitlines()
+        return source.read_text(encoding="utf-8-sig").splitlines()
     except UnicodeDecodeError:
-        lines = source.read_text(encoding="latin-1").splitlines()
-    return _read_v2000_lines(lines, source.stem)
+        return source.read_text(encoding="latin-1").splitlines()
+
+
+def read_v2000(path: str | Path) -> Molecule:
+    """Read a V2000 MOL; aromatic (order 4) bonds are converted to single/double."""
+    source = Path(path)
+    lines = _read_text_lines(source)
+    if _counts_version(lines) != "V2000":
+        raise MolfileError("Only MDL Molfile V2000 files are supported.")
+    return _read_molfile_lines(lines, source.stem)
+
+
+def read_mol(path: str | Path) -> Molecule:
+    """Read a V2000 or V3000 MOL file (whichever its counts line declares)."""
+    source = Path(path)
+    return _read_molfile_lines(_read_text_lines(source), source.stem)
+
+
+@dataclass(frozen=True)
+class SdfRecord:
+    molecule: Molecule
+    # SD data items in file order, as (field name, value) pairs.
+    data: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class SdfReadResult:
+    records: tuple[SdfRecord, ...]
+    # (1-based record number, reason) for every record that was skipped.
+    skipped: tuple[tuple[int, str], ...]
+    # Records present in the file but not read because of max_records.
+    remaining: int
+
+
+def _parse_sdf_data(lines: list[str]) -> tuple[tuple[str, str], ...]:
+    items: list[tuple[str, str]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        if not line.startswith(">"):
+            continue
+        match = re.search(r"<([^>]*)>", line)
+        name = match.group(1) if match else line[1:].strip()
+        value_lines = []
+        while index < len(lines) and lines[index].strip() != "":
+            value_lines.append(lines[index])
+            index += 1
+        items.append((name, "\n".join(value_lines)))
+    return tuple(items)
+
+
+def _split_sdf_records(lines: list[str]) -> list[list[str]]:
+    records: list[list[str]] = []
+    current: list[str] = []
+    for line in lines:
+        if line.rstrip() == "$$$$":
+            records.append(current)
+            current = []
+        else:
+            current.append(line)
+    if any(line.strip() for line in current):
+        records.append(current)
+    return records
+
+
+def read_sdf_records(
+    path: str | Path, max_records: int | None = None, skip_invalid: bool = False,
+) -> SdfReadResult:
+    """Read every structure record (V2000 or V3000) and its data items from an SD file.
+
+    With ``skip_invalid`` an unreadable record is listed in ``skipped``
+    instead of stopping the read. A record without a title gets
+    ``<file stem> <record number>``.
+    """
+    source = Path(path)
+    raw_records = _split_sdf_records(_read_text_lines(source))
+    records: list[SdfRecord] = []
+    skipped: list[tuple[int, str]] = []
+    read_count = 0
+    for number, lines in enumerate(raw_records, start=1):
+        if max_records is not None and read_count >= max_records:
+            break
+        read_count += 1
+        end = next((index for index, line in enumerate(lines) if line.startswith("M  END")), len(lines))
+        try:
+            molecule = _read_molfile_lines(lines[:end + 1], f"{source.stem} {number}")
+        except MolfileError as exc:
+            if not skip_invalid:
+                raise MolfileError(f"SDF record {number}: {exc}") from exc
+            skipped.append((number, str(exc)))
+            continue
+        records.append(SdfRecord(molecule, _parse_sdf_data(lines[end + 1:])))
+    if not records and not skipped:
+        raise MolfileError("SD file contains no structure records.")
+    return SdfReadResult(tuple(records), tuple(skipped), len(raw_records) - read_count)
 
 
 def read_sdf(path: str | Path) -> Molecule:
-    """Read the first V2000 structure record from an SD file."""
-    source = Path(path)
-    try:
-        text = source.read_text(encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        text = source.read_text(encoding="latin-1")
-    first_record = text.split("$$$$", 1)[0].splitlines()
-    return _read_v2000_lines(first_record, source.stem)
+    """Read the first structure record from an SD file."""
+    return read_sdf_records(path, max_records=1).records[0].molecule
 
 
-def _render_v2000(molecule: Molecule) -> str:
-    """Build a V2000 structure block, shared by MOL and SDF writing."""
+_V2000_LIMIT = 999
+
+
+def _validate_for_molfile(molecule: Molecule) -> None:
     atom_count = len(molecule.atoms)
-    bond_count = len(molecule.bonds)
-    if atom_count > 999 or bond_count > 999:
-        raise MolfileError("V2000 writing supports at most 999 atoms and 999 bonds.")
     for index, atom in enumerate(molecule.atoms):
         if not atom.element or len(atom.element) > 3 or any(char.isspace() for char in atom.element):
             raise MolfileError(f"Atom {index + 1} has an invalid element symbol.")
@@ -605,6 +930,15 @@ def _render_v2000(molecule: Molecule) -> str:
             raise MolfileError(f"Bond {index + 1} references an unknown atom.")
         if bond.order not in {1, 2, 3}:
             raise MolfileError(f"Bond {index + 1} has unsupported order {bond.order}.")
+
+
+def _render_v2000(molecule: Molecule) -> str:
+    """Build a V2000 structure block, shared by MOL and SDF writing."""
+    atom_count = len(molecule.atoms)
+    bond_count = len(molecule.bonds)
+    if atom_count > _V2000_LIMIT or bond_count > _V2000_LIMIT:
+        raise MolfileError("V2000 writing supports at most 999 atoms and 999 bonds; use V3000.")
+    _validate_for_molfile(molecule)
 
     lines = [
         molecule.name or "Blend Mol molecule",
@@ -629,19 +963,104 @@ def _render_v2000(molecule: Molecule) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _v3000_line(payload: str) -> list[str]:
+    """Wrap one V3000 record at 80 columns using ``-`` continuation."""
+    lines = []
+    while len("M  V30 " + payload) > 80:
+        cut = 80 - len("M  V30 ") - 1
+        lines.append("M  V30 " + payload[:cut] + "-")
+        payload = payload[cut:]
+    lines.append("M  V30 " + payload)
+    return lines
+
+
+def _render_v3000(molecule: Molecule) -> str:
+    """Build a V3000 connection table (no atom or bond count limit)."""
+    _validate_for_molfile(molecule)
+    lines = [
+        molecule.name or "Blend Mol molecule",
+        "Blend Mol",
+        "",
+        "  0  0  0     0  0            999 V3000",
+    ]
+    records = ["BEGIN CTAB", f"COUNTS {len(molecule.atoms)} {len(molecule.bonds)} 0 0 0", "BEGIN ATOM"]
+    for index, atom in enumerate(molecule.atoms, start=1):
+        record = (
+            f"{index} {atom.element} {atom.position[0]:.4f} {atom.position[1]:.4f} "
+            f"{atom.position[2]:.4f} 0"
+        )
+        if atom.formal_charge:
+            record += f" CHG={atom.formal_charge}"
+        records.append(record)
+    records.append("END ATOM")
+    if molecule.bonds:
+        records.append("BEGIN BOND")
+        records.extend(
+            f"{index} {bond.order} {bond.atom_a + 1} {bond.atom_b + 1}"
+            for index, bond in enumerate(molecule.bonds, start=1)
+        )
+        records.append("END BOND")
+    records.append("END CTAB")
+    for record in records:
+        lines.extend(_v3000_line(record))
+    lines.append("M  END")
+    return "\n".join(lines) + "\n"
+
+
+def _render_molfile(molecule: Molecule, version: str = "AUTO") -> str:
+    """Render V2000, V3000, or (AUTO) V2000 unless the molecule exceeds 999 atoms/bonds."""
+    version = version.upper()
+    if version == "AUTO":
+        fits = len(molecule.atoms) <= _V2000_LIMIT and len(molecule.bonds) <= _V2000_LIMIT
+        version = "V2000" if fits else "V3000"
+    if version == "V2000":
+        return _render_v2000(molecule)
+    if version == "V3000":
+        return _render_v3000(molecule)
+    raise ValueError(f"Unknown molfile version {version!r}")
+
+
 def write_v2000(molecule: Molecule, path: str | Path) -> None:
     """Write atoms, single/double/triple bonds, and formal charges as V2000."""
     Path(path).write_text(_render_v2000(molecule), encoding="utf-8")
 
 
-def write_sdf(molecule: Molecule, path: str | Path) -> None:
-    """Write a single-record SD file: a V2000 block followed by ``$$$$``.
+def write_mol(molecule: Molecule, path: str | Path, version: str = "AUTO") -> str:
+    """Write a MOL file and return the version used ("V2000" or "V3000")."""
+    text = _render_molfile(molecule, version)
+    Path(path).write_text(text, encoding="utf-8")
+    return "V3000" if "V3000" in text.splitlines()[3] else "V2000"
 
-    Matches what read_sdf already reads back (the first V2000 record up to
-    the ``$$$$`` delimiter); no per-atom/per-molecule SDF data tags are
-    written.
-    """
-    Path(path).write_text(_render_v2000(molecule) + "$$$$\n", encoding="utf-8")
+
+def _render_sdf_data(data) -> list[str]:
+    lines = []
+    for name, value in data:
+        if not name or any(char in name for char in "<>\n"):
+            raise MolfileError(f"SDF data field name {name!r} is invalid.")
+        lines.append(f"> <{name}>")
+        # A blank line ends a data value, so blank lines inside it are dropped.
+        lines.extend(line for line in str(value).splitlines() if line.strip())
+        lines.append("")
+    return lines
+
+
+def write_sdf_records(records, path: str | Path, version: str = "AUTO") -> None:
+    """Write several SdfRecord entries, each followed by its data items and ``$$$$``."""
+    chunks = []
+    for record in records:
+        chunks.append(_render_molfile(record.molecule, version))
+        data_lines = _render_sdf_data(record.data)
+        if data_lines:
+            chunks.append("\n".join(data_lines) + "\n")
+        chunks.append("$$$$\n")
+    if not chunks:
+        raise MolfileError("There are no molecules to write.")
+    Path(path).write_text("".join(chunks), encoding="utf-8")
+
+
+def write_sdf(molecule: Molecule, path: str | Path, data=(), version: str = "AUTO") -> None:
+    """Write a single-record SD file with optional data items."""
+    write_sdf_records((SdfRecord(molecule, tuple(data)),), path, version)
 
 
 def write_xyz(molecule: Molecule, path: str | Path) -> None:
@@ -704,6 +1123,73 @@ def write_pdb(molecule: Molecule, path: str | Path) -> None:
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# Bonds accepted per atom when perceiving connectivity from distances. Larger
+# than the neutral valence for N and B so ammonium/borate centres keep all
+# four neighbours; elements without a record allow up to six.
+_PERCEPTION_MAX_BONDS = {"N": 4, "B": 4}
+_PERCEPTION_DEFAULT_MAX_BONDS = 6
+
+
+def perceive_bonds(
+    molecule: Molecule, tolerance: float = 0.45, min_distance: float = 0.4,
+) -> Molecule:
+    """Return ``molecule`` with single bonds added between atoms close enough to bond.
+
+    Two atoms bond when their distance is above ``min_distance`` and at most
+    the sum of their covalent radii plus ``tolerance`` (angstroms). Pairs are
+    accepted closest-first relative to that cutoff, and an atom stops taking
+    bonds at its element's limit (one for hydrogen and fluorine), so a
+    hydrogen bonds only to its nearest neighbour. Existing bonds are kept.
+    Bond orders are not inferred; every new bond is single.
+    """
+    atoms = molecule.atoms
+    radii = [COVALENT_RADII.get(atom.element, UNKNOWN_COVALENT_RADIUS) for atom in atoms]
+    if not atoms:
+        return molecule
+    cell = 2.0 * max(radii) + tolerance
+    grid: dict[tuple[int, int, int], list[int]] = {}
+    for index, atom in enumerate(atoms):
+        key = tuple(int(math.floor(value / cell)) for value in atom.position)
+        grid.setdefault(key, []).append(index)
+    existing = {tuple(sorted((bond.atom_a, bond.atom_b))) for bond in molecule.bonds}
+    candidates: list[tuple[float, int, int]] = []
+    for (cx, cy, cz), members in grid.items():
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    neighbours = grid.get((cx + dx, cy + dy, cz + dz))
+                    if not neighbours:
+                        continue
+                    for first in members:
+                        for second in neighbours:
+                            if second <= first or (first, second) in existing:
+                                continue
+                            distance = math.dist(atoms[first].position, atoms[second].position)
+                            cutoff = radii[first] + radii[second] + tolerance
+                            if min_distance < distance <= cutoff:
+                                candidates.append((distance - cutoff, first, second))
+    candidates.sort()
+    bond_count = [0] * len(atoms)
+    for bond in molecule.bonds:
+        bond_count[bond.atom_a] += 1
+        bond_count[bond.atom_b] += 1
+
+    def limit(element: str) -> int:
+        if element in _PERCEPTION_MAX_BONDS:
+            return _PERCEPTION_MAX_BONDS[element]
+        return MAX_VALENCE.get(element, _PERCEPTION_DEFAULT_MAX_BONDS)
+
+    limits = [limit(atom.element) for atom in atoms]
+    added: list[Bond] = []
+    for _score, first, second in candidates:
+        if bond_count[first] >= limits[first] or bond_count[second] >= limits[second]:
+            continue
+        added.append(Bond(first, second, 1))
+        bond_count[first] += 1
+        bond_count[second] += 1
+    return Molecule(molecule.name, atoms, molecule.bonds + tuple(added))
+
+
 def read_xyz(path: str | Path) -> Molecule:
     """Read atom elements and Cartesian coordinates from a standard XYZ file."""
     source = Path(path)
@@ -735,8 +1221,13 @@ def read_xyz(path: str | Path) -> Molecule:
     return Molecule(lines[1].strip() or source.stem, tuple(atoms), ())
 
 
-def read_pdb(path: str | Path) -> Molecule:
-    """Read PDB ATOM/HETATM coordinates and single-bond CONECT records."""
+def read_pdb(path: str | Path, perceive_if_no_conect: bool = False) -> Molecule:
+    """Read PDB ATOM/HETATM coordinates and single-bond CONECT records.
+
+    With ``perceive_if_no_conect``, a file with no CONECT records at all gets
+    single bonds from interatomic distances (see perceive_bonds). A file with
+    any CONECT record keeps exactly those bonds.
+    """
     source = Path(path)
     try:
         lines = source.read_text(encoding="utf-8-sig").splitlines()
@@ -746,6 +1237,7 @@ def read_pdb(path: str | Path) -> Molecule:
     serial_to_index: dict[int, int] = {}
     bonds: set[tuple[int, int]] = set()
     seen_atoms = False
+    seen_conect = False
     for line_number, line in enumerate(lines, start=1):
         record = line[0:6].strip().upper()
         if record == "ENDMDL" and seen_atoms:
@@ -773,6 +1265,7 @@ def read_pdb(path: str | Path) -> Molecule:
                 serial_to_index[serial] = len(atoms)
                 atoms.append(Atom(element, position))
         elif record == "CONECT":
+            seen_conect = True
             fields = line[6:].split()
             try:
                 serials = [int(field) for field in fields]
@@ -785,4 +1278,9 @@ def read_pdb(path: str | Path) -> Molecule:
                         bonds.add(tuple(sorted((first, serial_to_index[serial]))))
     if not atoms:
         raise MolfileError("PDB file contains no ATOM or HETATM coordinate records.")
-    return Molecule(source.stem, tuple(atoms), tuple(Bond(first, second, 1) for first, second in sorted(bonds)))
+    molecule = Molecule(
+        source.stem, tuple(atoms), tuple(Bond(first, second, 1) for first, second in sorted(bonds)),
+    )
+    if perceive_if_no_conect and not seen_conect:
+        return perceive_bonds(molecule)
+    return molecule

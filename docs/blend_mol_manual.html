@@ -112,12 +112,12 @@
 
   <section id="io"><h2>Import / Export（読み込み・書き出し）</h2><p class="sub">分子を読み込む、または選択中の分子を書き出すためのパネルです。</p>
     <div class="table-wrap"><table><thead><tr><th>ボタン</th><th>機能</th><th>補足</th></tr></thead><tbody>
-      <tr><td><b>MOL</b></td><td>MDL V2000 MOL を読み込み</td><td>原子、座標、結合情報を読み込みます。</td></tr>
-      <tr><td><b>XYZ</b></td><td>XYZ を読み込み</td><td>原子座標のみを読み込みます。結合と暗黙水素は自動作成されないため、必要なら手作業で追加します。</td></tr>
-      <tr><td><b>PDB</b></td><td>PDB を読み込み</td><td>原子座標と、ファイル内の <code>CONECT</code> による単結合を読み込みます。</td></tr>
-      <tr><td><b>SDF</b></td><td>SDF を読み込み</td><td>SD ファイルの先頭の V2000 構造レコードを読み込みます。</td></tr>
+      <tr><td><b>MOL</b></td><td>MDL MOL（V2000 / V3000）を読み込み</td><td>原子、座標、結合情報を読み込みます。芳香族結合（次数 4）は単結合と二重結合に自動で割り当てます。割り当てられない場合は理由を表示して中止します。</td></tr>
+      <tr><td><b>XYZ</b></td><td>XYZ を読み込み</td><td>原子座標を読み込みます。<b>Perceive Bonds</b>（既定で ON）で、原子間距離から単結合を自動で作ります。結合次数は推定しないので、二重結合などは手作業で設定します。暗黙水素は追加しません。</td></tr>
+      <tr><td><b>PDB</b></td><td>PDB を読み込み</td><td>原子座標と、ファイル内の <code>CONECT</code> による単結合を読み込みます。<code>CONECT</code> が1行もないファイルは、原子間距離から単結合を作ります（<b>Perceive Bonds Without CONECT</b>、既定で ON）。</td></tr>
+      <tr><td><b>SDF</b></td><td>SDF を読み込み</td><td>SD ファイルの全レコード（V2000 / V3000）を、1レコード1分子として読み込みます。<b>Max Records</b>（既定 100）、読めないレコードを飛ばす <b>Skip Invalid Records</b>、重ならないよう横に並べる <b>Arrange in a Row</b> を指定できます。各レコードのデータ項目（<code>&gt; &lt;NAME&gt;</code> など）は分子に保存され、SDF 書き出し時に戻ります。</td></tr>
       <tr><td><b>Create from SMILES</b></td><td>SMILES から分子を作成</td><td>SMILES と分子名を入力して作成します。基本有機 SMILES のサブセットに対応し、初期配置は簡易 2D レイアウトです。</td></tr>
-      <tr><td><b>MOL / XYZ / PDB / SDF</b>（Export selected molecule）</td><td>選択中の分子を書き出し</td><td>原子・結合・分子ルートのいずれかを選択してから実行します。書き出し前に、Blender 上で動かした原子位置を自動同期します。</td></tr>
+      <tr><td><b>MOL / XYZ / PDB / SDF</b>（Export selected molecules）</td><td>選択中の分子を書き出し</td><td>原子・結合・分子ルートのいずれかを選択してから実行します。書き出し前に、Blender 上で動かした原子位置を自動同期します。MOL と SDF は <b>Format</b> で V2000 / V3000 / Auto（999 原子・結合を超えると V3000）を選べます。SDF は選択中のすべての分子を1つのファイルに書き出します。</td></tr>
       <tr><td><b>Export Partial UFF Report</b></td><td>UFF の診断情報を JSON 出力</td><td>原子型、実装済みのエネルギー項、拘束、固定原子、最終最小化・ベンチマークのログを保存します。</td></tr>
     </tbody></table></div>
     <p class="note"><b>PDB の注意:</b> PDB 出力は結合の有無を <code>CONECT</code> として保存しますが、結合次数と形式電荷は保存されません。</p>

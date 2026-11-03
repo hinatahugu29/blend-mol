@@ -98,7 +98,7 @@ class BLENDMOL_PT_file_io(Panel):
         import_row.operator(BLENDMOL_OT_import_sdf.bl_idname, text="SDF", icon="IMPORT")
         layout.operator(BLENDMOL_OT_import_smiles.bl_idname, icon="MODIFIER")
         layout.separator()
-        layout.label(text="Export selected molecule")
+        layout.label(text="Export selected molecules")
         export_row = layout.row(align=True)
         export_row.operator(BLENDMOL_OT_export_v2000.bl_idname, text="MOL", icon="EXPORT")
         export_row.operator(BLENDMOL_OT_export_xyz.bl_idname, text="XYZ", icon="EXPORT")

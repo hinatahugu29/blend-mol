@@ -17,6 +17,7 @@ every supported import/export format.
 """
 
 import importlib
+import json
 import math
 import sys
 import tempfile
@@ -372,7 +373,8 @@ try:
 
         _select_only(_atom_object(collection, 0))
         export_result = addon.BLENDMOL_OT_export_v2000.execute(
-            type("ExportOp", (), {"filepath": str(mol_path), "report": _noop_report})(),
+            type("ExportOp", (), {"filepath": str(mol_path), "version": "AUTO",
+                                  "report": _noop_report})(),
             addon.bpy.context,
         )
         assert export_result == {"FINISHED"}, export_result
@@ -419,20 +421,71 @@ try:
         except RuntimeError as exc:
             assert "No such file" in str(exc), exc
         direct_result = addon.BLENDMOL_OT_import_pdb.execute(
-            type("ImportOp", (), {"filepath": str(missing_path), "report": _noop_report})(),
+            type("ImportOp", (), {"filepath": str(missing_path), "perceive_bonds": True,
+                                  "report": _noop_report})(),
             addon.bpy.context,
         )
         assert direct_result == {"CANCELLED"}, direct_result
 
         sdf_path = tmp_path / "roundtrip.sdf"
         export_sdf_result = addon.BLENDMOL_OT_export_sdf.execute(
-            type("ExportOp", (), {"filepath": str(sdf_path), "report": _noop_report})(),
+            type("ExportOp", (), {"filepath": str(sdf_path), "version": "AUTO", "all_selected": True,
+                                  "report": _noop_report})(),
             addon.bpy.context,
         )
         assert export_sdf_result == {"FINISHED"}, export_sdf_result
         assert sdf_path.read_text(encoding="utf-8").rstrip("\n").endswith("$$$$")
         import_sdf_result = addon.bpy.ops.blendmol.import_sdf(filepath=str(sdf_path))
         assert import_sdf_result == {"FINISHED"}, import_sdf_result
+
+        # XYZ import perceives bonds from distances by default (the exported
+        # molecule has bonds), and can be told not to.
+        roots_before = {obj.name for obj in addon.bpy.data.objects if obj.get("blend_mol_managed")}
+        assert addon.bpy.ops.blendmol.import_xyz(filepath=str(xyz_path), perceive_bonds=False) == {"FINISHED"}
+        plain_root = next(obj for obj in addon.bpy.data.objects
+                          if obj.get("blend_mol_managed") and obj.name not in roots_before)
+        assert addon.scene_data._deserialize_molecule(plain_root["blend_mol_data"]).bonds == ()
+        perceived_root = next(
+            obj for obj in addon.bpy.data.objects
+            if obj.get("blend_mol_managed") and obj.get("blend_mol_source") == str(xyz_path)
+            and obj is not plain_root
+        )
+        assert addon.scene_data._deserialize_molecule(perceived_root["blend_mol_data"]).bonds
+
+        # Two selected molecules export as two SDF records with their data
+        # items, and re-import as two arranged molecules carrying that data.
+        multi_path = tmp_path / "two_records.sdf"
+        assert addon.bpy.ops.blendmol.import_smiles(smiles="CCO", molecule_name="ethanol") == {"FINISHED"}
+        ethanol_root = addon.scene_data._selected_molecule_root(addon.bpy.context)
+        ethanol_root["blend_mol_sdf_data"] = json.dumps([["ID", "E-1"], ["NOTE", "line one\nline two"]])
+        assert addon.bpy.ops.blendmol.import_smiles(smiles="c1ccsc1", molecule_name="thiophene") == {"FINISHED"}
+        thiophene_root = addon.scene_data._selected_molecule_root(addon.bpy.context)
+        _select_only_many([ethanol_root, thiophene_root])
+        multi_export = addon.BLENDMOL_OT_export_sdf.execute(
+            type("ExportOp", (), {"filepath": str(multi_path), "version": "V3000", "all_selected": True,
+                                  "report": _noop_report})(),
+            addon.bpy.context,
+        )
+        assert multi_export == {"FINISHED"}, multi_export
+        multi_text = multi_path.read_text(encoding="utf-8")
+        assert multi_text.count("$$$$") == 2 and multi_text.count("V3000") == 2, multi_text[:200]
+        roots_before = {obj.name for obj in addon.bpy.data.objects if obj.get("blend_mol_managed")}
+        assert addon.bpy.ops.blendmol.import_sdf(filepath=str(multi_path)) == {"FINISHED"}
+        new_roots = sorted(
+            (obj for obj in addon.bpy.data.objects
+             if obj.get("blend_mol_managed") and obj.name not in roots_before),
+            key=lambda obj: obj.location.x,
+        )
+        assert len(new_roots) == 2, [obj.name for obj in new_roots]
+        assert new_roots[1].location.x > new_roots[0].location.x + 1.0, "records must not overlap"
+        # The active molecule is written first, so match records by name.
+        by_name = {addon.scene_data._deserialize_molecule(obj["blend_mol_data"]).name: obj for obj in new_roots}
+        assert set(by_name) == {"ethanol", "thiophene"}, set(by_name)
+        assert json.loads(by_name["ethanol"]["blend_mol_sdf_data"]) == [["ID", "E-1"], ["NOTE", "line one\nline two"]]
+        assert "blend_mol_sdf_data" not in by_name["thiophene"]
+        thiophene = addon.scene_data._deserialize_molecule(by_name["thiophene"]["blend_mol_data"])
+        sulfur = next(i for i, atom in enumerate(thiophene.atoms) if atom.element == "S")
+        assert all(bond.order == 1 for bond in thiophene.bonds if sulfur in (bond.atom_a, bond.atom_b))
 
     smiles_result = addon.bpy.ops.blendmol.import_smiles(smiles="c1ccccc1O", molecule_name="phenol")
     assert smiles_result == {"FINISHED"}, smiles_result
@@ -482,6 +535,8 @@ try:
         "rebuild_subdivision_colors_ok",
         "roughness_metallic_live_update_ok",
         "export_import_v2000_xyz_pdb_sdf_ok",
+        "xyz_bond_perception_ok",
+        "multi_record_sdf_v3000_round_trip_ok",
         "export_uff_report_ok",
         "missing_file_import_cancelled_ok",
         "smiles_import_ok",

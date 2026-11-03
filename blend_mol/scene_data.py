@@ -95,6 +95,20 @@ def _selected_molecule_root(context) -> bpy.types.Object | None:
     return None
 
 
+def _selected_molecule_roots(context) -> list[bpy.types.Object]:
+    """Every molecule root owning a selected object, active molecule first, without repeats."""
+    roots: list[bpy.types.Object] = []
+    candidates = [context.active_object] + list(context.selected_objects)
+    for obj in candidates:
+        while obj:
+            if obj.get("blend_mol_managed"):
+                if obj not in roots:
+                    roots.append(obj)
+                break
+            obj = obj.parent
+    return roots
+
+
 def _selected_explicit_atom(context) -> tuple[bpy.types.Object, bpy.types.Collection, int] | None:
     obj = context.active_object
     if obj is None or obj.get("blend_mol_kind") != "atom" or obj.get("blend_mol_implicit"):
