@@ -41,31 +41,31 @@ def drive_gesture_to_completion(timeout_s: float = 30.0) -> None:
     """Feed synthetic TIMER events until the auto session finishes itself."""
     deadline = time.monotonic() + timeout_s
     timer_event = type("TimerEvent", (), {"type": "TIMER"})()
-    while addon._LIVE_UFF_OPERATOR is not None:
+    while addon.live_uff.STATE.operator is not None:
         if time.monotonic() > deadline:
             raise AssertionError("Live UFF gesture did not auto-stop in time")
-        operator = addon._LIVE_UFF_OPERATOR
+        operator = addon.live_uff.STATE.operator
         addon.BLENDMOL_OT_toggle_live_uff.modal(operator, addon.bpy.context, timer_event)
         time.sleep(0.005)
 
 
 def trigger_real_auto_start(atom_object) -> None:
     """Exercise the real depsgraph handler, then fire its deferred timer."""
-    assert not addon.bpy.app.timers.is_registered(addon._start_auto_live_uff)
+    assert not addon.bpy.app.timers.is_registered(addon.live_uff._start_auto_live_uff)
     addon.bpy.context.view_layer.update()  # depsgraph_update_post runs synchronously
-    assert addon._AUTO_LIVE_UFF_TIMER_PENDING, "depsgraph handler did not arm the auto-start timer"
-    assert addon.bpy.app.timers.is_registered(addon._start_auto_live_uff)
-    addon.bpy.app.timers.unregister(addon._start_auto_live_uff)
-    addon._start_auto_live_uff()  # simulates Blender's main loop firing the timer
-    assert addon._LIVE_UFF_OPERATOR is not None, "auto-start did not invoke the modal operator"
+    assert addon.live_uff.STATE.auto_timer_pending, "depsgraph handler did not arm the auto-start timer"
+    assert addon.bpy.app.timers.is_registered(addon.live_uff._start_auto_live_uff)
+    addon.bpy.app.timers.unregister(addon.live_uff._start_auto_live_uff)
+    addon.live_uff._start_auto_live_uff()  # simulates Blender's main loop firing the timer
+    assert addon.live_uff.STATE.operator is not None, "auto-start did not invoke the modal operator"
 
 
 addon.register()
 try:
     molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     settings = addon.bpy.context.scene.blend_mol_settings
-    root = addon._create_molecule(molecule, settings, "gesture_smoke")
-    collection = addon._molecule_collection(root)
+    root = addon.display._create_molecule(molecule, settings, "gesture_smoke")
+    collection = addon.scene_data._molecule_collection(root)
     atom_object = next(
         obj for obj in collection.objects
         if obj.get("blend_mol_kind") == "atom"
@@ -95,7 +95,7 @@ try:
     assert math.dist(after_1[0], original_position) > 1e-3, (
         "gesture 1 after-snapshot must reflect the settled, moved coordinates"
     )
-    gesture_1_final = tuple(addon._deserialize_molecule(root["blend_mol_data"]).atoms[0].position)
+    gesture_1_final = tuple(addon.scene_data._deserialize_molecule(root["blend_mol_data"]).atoms[0].position)
 
     # --- Gesture 2 (immediately after, same atom, further move) --------
     live_atom_object = next(
@@ -135,7 +135,7 @@ try:
     assert addon.BLENDMOL_OT_restore_uff_coordinates.execute(
         restored_before, addon.bpy.context
     ) == {"FINISHED"}
-    restored_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    restored_molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert math.dist(restored_molecule.atoms[0].position, gesture_1_final) < 1e-6, (
         "restoring BEFORE must land on gesture 2's start, i.e. gesture 1's settled result"
     )
@@ -144,7 +144,7 @@ try:
     assert addon.BLENDMOL_OT_restore_uff_coordinates.execute(
         restored_after, addon.bpy.context
     ) == {"FINISHED"}
-    restored_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    restored_molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert math.dist(restored_molecule.atoms[0].position, after_2[0]) < 1e-6, (
         "restoring AFTER must return to gesture 2's settled result"
     )
@@ -153,7 +153,7 @@ try:
     # Before this session's fix, the real depsgraph handler never armed the
     # auto-start timer at all, so a cancelled *real* auto session could never
     # be exercised; only a manually constructed operator state was tested.
-    pre_cancel_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    pre_cancel_molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     pre_cancel_position = tuple(pre_cancel_molecule.atoms[0].position)
     cancel_atom_object = next(
         obj for obj in collection.objects
@@ -167,13 +167,13 @@ try:
     addon.bpy.context.view_layer.objects.active = cancel_atom_object
     cancel_atom_object.location.z += 0.25
     trigger_real_auto_start(cancel_atom_object)
-    operator = addon._LIVE_UFF_OPERATOR
+    operator = addon.live_uff.STATE.operator
     assert operator is not None, "real auto-start must produce a running operator to cancel"
     escape_event = type("EscapeEvent", (), {"type": "ESC", "value": "PRESS"})()
     result = addon.BLENDMOL_OT_toggle_live_uff.modal(operator, addon.bpy.context, escape_event)
     assert result == {"CANCELLED", "PASS_THROUGH"}, result
-    assert addon._LIVE_UFF_OPERATOR is None, "cancelling must clear the running operator"
-    cancelled_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    assert addon.live_uff.STATE.operator is None, "cancelling must clear the running operator"
+    cancelled_molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert math.dist(cancelled_molecule.atoms[0].position, pre_cancel_position) < 1e-6, (
         "Escape on a real auto-started gesture must restore the pre-drag coordinates"
     )
@@ -187,7 +187,7 @@ try:
     # A real mouse drag reports many intermediate positions while the modal
     # operator is already running. Only the final position at auto-stop time
     # must be reflected; the depsgraph guard must not spawn extra sessions.
-    multi_step_start = tuple(addon._deserialize_molecule(root["blend_mol_data"]).atoms[0].position)
+    multi_step_start = tuple(addon.scene_data._deserialize_molecule(root["blend_mol_data"]).atoms[0].position)
     multi_step_atom_object = next(
         obj for obj in collection.objects
         if obj.get("blend_mol_kind") == "atom"
@@ -200,22 +200,22 @@ try:
     addon.bpy.context.view_layer.objects.active = multi_step_atom_object
     multi_step_atom_object.location.x += 0.05
     trigger_real_auto_start(multi_step_atom_object)
-    operator = addon._LIVE_UFF_OPERATOR
+    operator = addon.live_uff.STATE.operator
     assert operator is not None
     timer_event = type("TimerEvent", (), {"type": "TIMER"})()
     # One tick submits the first position; nudge further while it is running.
     addon.BLENDMOL_OT_toggle_live_uff.modal(operator, addon.bpy.context, timer_event)
-    assert not addon._AUTO_LIVE_UFF_TIMER_PENDING, (
+    assert not addon.live_uff.STATE.auto_timer_pending, (
         "the depsgraph guard must not arm a second auto-start while one gesture runs"
     )
     multi_step_atom_object.location.x += 0.05
     addon.bpy.context.view_layer.update()
-    assert not addon._AUTO_LIVE_UFF_TIMER_PENDING, (
+    assert not addon.live_uff.STATE.auto_timer_pending, (
         "moving the held atom again mid-gesture must not spawn a second session"
     )
     final_multi_step_target = tuple(multi_step_atom_object.matrix_local.translation)
     drive_gesture_to_completion()
-    multi_step_final = addon._deserialize_molecule(root["blend_mol_data"]).atoms[0].position
+    multi_step_final = addon.scene_data._deserialize_molecule(root["blend_mol_data"]).atoms[0].position
     assert math.dist(multi_step_final, multi_step_start) > 1e-3, (
         "the multi-step gesture must still have moved the held atom overall"
     )
@@ -229,13 +229,13 @@ try:
     # cooldown, every further micro-movement re-triggered a fresh failing
     # auto-start, each one reporting another error -- fighting the user's
     # own grab/cancel/confirm instead of naming the problem once.
-    collinear_molecule = addon.Molecule(
+    collinear_molecule = addon.molfile.Molecule(
         "Collinear cooldown smoke",
-        (addon.Atom("O", (0, 0, 0)), addon.Atom("H", (1, 0, 0)), addon.Atom("H", (-1, 0, 0))),
-        (addon.Bond(0, 1, 1), addon.Bond(0, 2, 1)),
+        (addon.molfile.Atom("O", (0, 0, 0)), addon.molfile.Atom("H", (1, 0, 0)), addon.molfile.Atom("H", (-1, 0, 0))),
+        (addon.molfile.Bond(0, 1, 1), addon.molfile.Bond(0, 2, 1)),
     )
-    collinear_root = addon._create_molecule(collinear_molecule, settings, "cooldown_smoke")
-    collinear_collection = addon._molecule_collection(collinear_root)
+    collinear_root = addon.display._create_molecule(collinear_molecule, settings, "cooldown_smoke")
+    collinear_collection = addon.scene_data._molecule_collection(collinear_root)
     held_atom_object = next(
         obj for obj in collinear_collection.objects
         if obj.get("blend_mol_kind") == "atom" and not obj.get("blend_mol_implicit")
@@ -245,7 +245,7 @@ try:
         obj.select_set(False)
     held_atom_object.select_set(True)
     addon.bpy.context.view_layer.objects.active = held_atom_object
-    addon._AUTO_LIVE_UFF_ERROR_COOLDOWN.clear()
+    addon.live_uff.STATE.error_cooldown.clear()
     held_atom_object.location.x += 0.001  # trivial move: the geometry stays ~collinear
     trigger_real_auto_start(held_atom_object)
     drive_gesture_to_completion()
@@ -253,20 +253,20 @@ try:
     assert "collinear" in collinear_root.get("blend_mol_live_uff_error", ""), (
         collinear_root.get("blend_mol_live_uff_error")
     )
-    assert cooldown_key in addon._AUTO_LIVE_UFF_ERROR_COOLDOWN, "a failed auto-start must arm the cooldown"
+    assert cooldown_key in addon.live_uff.STATE.error_cooldown, "a failed auto-start must arm the cooldown"
 
     # Moving the held atom again right away must not spawn a fresh session:
     # the depsgraph handler may still arm the deferred timer, but firing it
     # must be a no-op while the cooldown for this atom is active.
     held_atom_object.location.x += 0.001
     addon.bpy.context.view_layer.update()
-    if addon.bpy.app.timers.is_registered(addon._start_auto_live_uff):
-        addon.bpy.app.timers.unregister(addon._start_auto_live_uff)
-    addon._start_auto_live_uff()
-    assert addon._LIVE_UFF_OPERATOR is None, "the error cooldown must suppress an immediate retry"
+    if addon.bpy.app.timers.is_registered(addon.live_uff._start_auto_live_uff):
+        addon.bpy.app.timers.unregister(addon.live_uff._start_auto_live_uff)
+    addon.live_uff._start_auto_live_uff()
+    assert addon.live_uff.STATE.operator is None, "the error cooldown must suppress an immediate retry"
 
     # Once the cooldown has elapsed, the same kind of movement may retry.
-    addon._AUTO_LIVE_UFF_ERROR_COOLDOWN[cooldown_key] -= addon._AUTO_LIVE_UFF_ERROR_COOLDOWN_SECONDS + 0.1
+    addon.live_uff.STATE.error_cooldown[cooldown_key] -= addon.live_uff.AUTO_START_ERROR_COOLDOWN_SECONDS + 0.1
     held_atom_object.location.x += 0.001
     trigger_real_auto_start(held_atom_object)
     drive_gesture_to_completion()

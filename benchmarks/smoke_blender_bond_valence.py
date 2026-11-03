@@ -11,7 +11,7 @@ import bpy
 
 def select_atoms(root, indices):
     bpy.ops.object.select_all(action="DESELECT")
-    collection = addon._molecule_collection(root)
+    collection = addon.scene_data._molecule_collection(root)
     objects = [obj for obj in collection.objects
                if obj.get("blend_mol_kind") == "atom"
                and not obj.get("blend_mol_implicit")
@@ -24,8 +24,8 @@ def select_atoms(root, indices):
 
 def snapshot(root):
     return (
-        root["blend_mol_data"], addon._molecule_revision(root),
-        {obj.name: obj.as_pointer() for obj in addon._molecule_collection(root).objects},
+        root["blend_mol_data"], addon.scene_data._molecule_revision(root),
+        {obj.name: obj.as_pointer() for obj in addon.scene_data._molecule_collection(root).objects},
         root.get("blend_mol_uff_last_run"),
     )
 
@@ -33,8 +33,8 @@ def snapshot(root):
 addon.register()
 try:
     settings = bpy.context.scene.blend_mol_settings
-    water = addon.Molecule("Water regression", (addon.Atom("O", (0, 0, 0)),), ())
-    root = addon._create_molecule(water, settings, "regression")
+    water = addon.molfile.Molecule("Water regression", (addon.molfile.Atom("O", (0, 0, 0)),), ())
+    root = addon.display._create_molecule(water, settings, "regression")
     select_atoms(root, {0})
     assert bpy.ops.blendmol.make_hydrogens_explicit() == {"FINISHED"}
     assert bpy.ops.blendmol.minimize_partial_uff() == {"FINISHED"}
@@ -47,7 +47,7 @@ try:
     # top of the hydrogen that remains.
     settings.bond_order = 1
     assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
-    replaced = addon._deserialize_molecule(root["blend_mol_data"])
+    replaced = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(replaced.atoms) == 3 and len(replaced.bonds) == 2
     assert sum(1 for atom in replaced.atoms if atom.element == "H") == 1
     assert sum(1 for atom in replaced.atoms if atom.element == "C") == 1
@@ -70,12 +70,12 @@ try:
     assert bpy.ops.blendmol.set_bond() == {"CANCELLED"}
     assert snapshot(root) == before
     # Valid double-bond additions are still supported.
-    carbon = addon.Molecule("Carbon regression", (addon.Atom("C", (0, 0, 0)),), ())
-    other = addon._create_molecule(carbon, settings, "regression")
+    carbon = addon.molfile.Molecule("Carbon regression", (addon.molfile.Atom("C", (0, 0, 0)),), ())
+    other = addon.display._create_molecule(carbon, settings, "regression")
     select_atoms(other, {0})
     settings.edit_element = "O"
     assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
-    current = addon._deserialize_molecule(other["blend_mol_data"])
+    current = addon.scene_data._deserialize_molecule(other["blend_mol_data"])
     assert len(current.atoms) == 2 and current.bonds[0].order == 2
     # A new hydrogen cannot receive a double bond, even if the parent can.
     select_atoms(other, {0})
@@ -84,38 +84,38 @@ try:
     assert bpy.ops.blendmol.add_bonded_atom() == {"CANCELLED"}
     assert snapshot(other) == before
     # Existing overbonded imports can be repaired incrementally.
-    atoms = (addon.Atom("O", (0, 0, 0)), addon.Atom("C", (2, 0, 0)),
-             addon.Atom("C", (-2, 0, 0)))
-    invalid = addon.Molecule("Repair", atoms, (addon.Bond(0, 1, 2), addon.Bond(0, 2, 2)))
-    repair = addon._create_molecule(invalid, settings, "regression")
+    atoms = (addon.molfile.Atom("O", (0, 0, 0)), addon.molfile.Atom("C", (2, 0, 0)),
+             addon.molfile.Atom("C", (-2, 0, 0)))
+    invalid = addon.molfile.Molecule("Repair", atoms, (addon.molfile.Bond(0, 1, 2), addon.molfile.Bond(0, 2, 2)))
+    repair = addon.display._create_molecule(invalid, settings, "regression")
     select_atoms(repair, {0, 1})
     settings.bond_order = 1
     assert bpy.ops.blendmol.set_bond() == {"FINISHED"}
-    repaired = addon._deserialize_molecule(repair["blend_mol_data"])
+    repaired = addon.scene_data._deserialize_molecule(repair["blend_mol_data"])
     assert sum(b.order for b in repaired.bonds) == 3
     # Charged nitrogen keeps the existing four-bond valence allowance.
-    ammonium = addon.Molecule("Ammonium", (addon.Atom("N", (0, 0, 0), 1),) + tuple(
-        addon.Atom("H", position) for position in ((1, 0, 0), (0, 1, 0), (0, 0, 1))
-    ), tuple(addon.Bond(0, index, 1) for index in range(1, 4)))
-    charged = addon._create_molecule(ammonium, settings, "regression")
+    ammonium = addon.molfile.Molecule("Ammonium", (addon.molfile.Atom("N", (0, 0, 0), 1),) + tuple(
+        addon.molfile.Atom("H", position) for position in ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+    ), tuple(addon.molfile.Bond(0, index, 1) for index in range(1, 4)))
+    charged = addon.display._create_molecule(ammonium, settings, "regression")
     select_atoms(charged, {0})
     settings.edit_element = "H"
     settings.formal_charge = 0
     assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
-    assert not addon._molecule_validation_messages(addon._deserialize_molecule(charged["blend_mol_data"]))
+    assert not addon.scene_data._molecule_validation_messages(addon.scene_data._deserialize_molecule(charged["blend_mol_data"]))
     # A double bond addition that needs two hydrogens' worth of valence
     # freed up replaces two explicit hydrogens, not just one: a saturated
     # methane-like carbon has no room for order 2 at all, let alone after
     # giving up a single hydrogen.
-    methane = addon.Molecule("Methane regression", (addon.Atom("C", (0, 0, 0)),) + tuple(
-        addon.Atom("H", position) for position in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))
-    ), tuple(addon.Bond(0, index, 1) for index in range(1, 5)))
-    methane_root = addon._create_molecule(methane, settings, "regression")
+    methane = addon.molfile.Molecule("Methane regression", (addon.molfile.Atom("C", (0, 0, 0)),) + tuple(
+        addon.molfile.Atom("H", position) for position in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))
+    ), tuple(addon.molfile.Bond(0, index, 1) for index in range(1, 5)))
+    methane_root = addon.display._create_molecule(methane, settings, "regression")
     select_atoms(methane_root, {0})
     settings.edit_element = "O"
     settings.bond_order = 2
     assert bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
-    double_bonded = addon._deserialize_molecule(methane_root["blend_mol_data"])
+    double_bonded = addon.scene_data._deserialize_molecule(methane_root["blend_mol_data"])
     assert len(double_bonded.atoms) == 4, "two hydrogens must be replaced, not just one"
     assert sum(1 for atom in double_bonded.atoms if atom.element == "H") == 2
     assert sum(1 for atom in double_bonded.atoms if atom.element == "O") == 1

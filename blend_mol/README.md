@@ -196,8 +196,10 @@ their atom and bond graph as a ball-and-stick model.
 
 ## Install in Blender 5.2
 
-Package this directory as a ZIP containing `blender_manifest.toml` and
-`__init__.py`. In Blender, use **Edit → Preferences → Get Extensions → Install
+Build the release ZIP from the repository root with
+`python benchmarks/build_release_zip.py` (it writes `dist/blend_mol-<version>.zip`
+with `blender_manifest.toml` at the archive root, every add-on module, and the
+`native/` DLL). In Blender, use **Edit → Preferences → Get Extensions → Install
 from Disk**, then select that ZIP. The **Blend Mol** panel appears in the 3D
 Viewport sidebar.
 

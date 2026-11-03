@@ -93,8 +93,8 @@ try:
 
     # --- State 2: molecule root selected, no atom/bond -----------------
     molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
-    root = addon._create_molecule(molecule, settings, "panel_smoke")
-    collection = addon._molecule_collection(root)
+    root = addon.display._create_molecule(molecule, settings, "panel_smoke")
+    collection = addon.scene_data._molecule_collection(root)
     addon.bpy.ops.object.select_all(action="DESELECT")
     root.select_set(True)
     context.view_layer.objects.active = root
@@ -135,9 +135,9 @@ try:
     draw_all(context, "bond selected")
 
     # --- State 6: with a stored distance/angle/dihedral constraint ------
-    addon._store_distance_constraints(root, ((0, 1, 1.5, 500.0),))
-    addon._store_angle_constraints(root, ((0, 1, 2, 1.9, 200.0),))
-    addon._store_dihedral_constraints(root, ((0, 1, 2, 3, 0.5, 100.0),))
+    addon.scene_data._store_distance_constraints(root, ((0, 1, 1.5, 500.0),))
+    addon.scene_data._store_angle_constraints(root, ((0, 1, 2, 1.9, 200.0),))
+    addon.scene_data._store_dihedral_constraints(root, ((0, 1, 2, 3, 0.5, 100.0),))
     addon.bpy.ops.object.select_all(action="DESELECT")
     atom_object(0).select_set(True)
     atom_object(1).select_set(True)
@@ -156,9 +156,9 @@ try:
     context.view_layer.objects.active = atom_object(1)
     draw_all(context, "with stored constraints, four atoms selected (dihedral match)")
 
-    addon._store_distance_constraints(root, ())
-    addon._store_angle_constraints(root, ())
-    addon._store_dihedral_constraints(root, ())
+    addon.scene_data._store_distance_constraints(root, ())
+    addon.scene_data._store_angle_constraints(root, ())
+    addon.scene_data._store_dihedral_constraints(root, ())
 
     # --- State 7: energy breakdown toggled on/off -----------------------
     addon.bpy.ops.object.select_all(action="DESELECT")

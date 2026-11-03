@@ -72,16 +72,16 @@ try:
     settings.formal_charge = 0
     result = addon.bpy.ops.blendmol.new_molecule(molecule_name="CRUD lifecycle")
     assert result == {"FINISHED"}, result
-    root = addon._selected_molecule_root(addon.bpy.context)
+    root = addon.scene_data._selected_molecule_root(addon.bpy.context)
     assert root is not None
-    collection = addon._molecule_collection(root)
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    collection = addon.scene_data._molecule_collection(root)
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(molecule.atoms) == 1 and molecule.atoms[0].element == "C"
 
     scene.cursor.location = (1.5, 0.3, 0.0)
     settings.edit_element = "O"
     assert addon.bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(molecule.atoms) == 2 and len(molecule.bonds) == 1
     assert molecule.atoms[1].element == "O"
 
@@ -91,7 +91,7 @@ try:
     assert addon.bpy.ops.blendmol.add_atom() == {"CANCELLED"}, "add_atom needs a selected molecule"
     _select_only(_atom_object(collection, 0))
     assert addon.bpy.ops.blendmol.add_atom() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(molecule.atoms) == 3, "add_atom must append an unbonded atom"
 
     # --- set_bond: create, then change order, then reject an invalid order -
@@ -99,7 +99,7 @@ try:
     _atom_object(collection, 2).select_set(True)
     settings.bond_order = 1
     assert addon.bpy.ops.blendmol.set_bond() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(molecule.bonds) == 2
 
     # Topology edits rebuild the display, so re-select the (new) atom objects.
@@ -108,7 +108,7 @@ try:
     _atom_object(collection, 2).select_set(True)
     settings.bond_order = 2
     assert addon.bpy.ops.blendmol.set_bond() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert any(
         {bond.atom_a, bond.atom_b} == {0, 2} and bond.order == 2 for bond in molecule.bonds
     ), "set_bond must change the existing bond's order rather than duplicating it"
@@ -120,7 +120,7 @@ try:
     _select_only(_atom_object(collection, 2))  # display was rebuilt; reselect
     settings.formal_charge = 1
     assert addon.bpy.ops.blendmol.set_formal_charge() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert molecule.atoms[2].element == "N" and molecule.atoms[2].formal_charge == 1
 
     # Atom 2 is now N+ (valence 4) with one order-2 bond already (valence
@@ -133,23 +133,23 @@ try:
         scene.cursor.location = cursor_position
         _select_only(_atom_object(collection, 2))
         assert addon.bpy.ops.blendmol.add_bonded_atom() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(molecule.atoms) == 5
 
     _select_only(_atom_object(collection, 2))
-    revision_at_capacity = addon._molecule_revision(root)
+    revision_at_capacity = addon.scene_data._molecule_revision(root)
     data_at_capacity = root["blend_mol_data"]
     rejected = addon.bpy.ops.blendmol.add_bonded_atom()
     assert rejected == {"CANCELLED"}, "a 5th bond on tetravalent N+ must be rejected"
-    assert addon._molecule_revision(root) == revision_at_capacity
+    assert addon.scene_data._molecule_revision(root) == revision_at_capacity
     assert root["blend_mol_data"] == data_at_capacity
 
     # --- toggle_fixed_atom ---------------------------------------------------
     _select_only(_atom_object(collection, 0))
     assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}
-    assert 0 in addon._fixed_atom_indices(root)
+    assert 0 in addon.scene_data._fixed_atom_indices(root)
     assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}
-    assert 0 not in addon._fixed_atom_indices(root)
+    assert 0 not in addon.scene_data._fixed_atom_indices(root)
 
     # --- constraints: distance, angle, dihedral, then remove ---------------
     _select_only(_atom_object(collection, 0))
@@ -157,9 +157,9 @@ try:
     settings.distance_constraint_target = 2.0
     settings.distance_constraint_strength = 10.0
     assert addon.bpy.ops.blendmol.set_distance_constraint() == {"FINISHED"}
-    assert len(addon._distance_constraints(root)) == 1
+    assert len(addon.scene_data._distance_constraints(root)) == 1
     assert addon.bpy.ops.blendmol.remove_distance_constraint(remove_all=True) == {"FINISHED"}
-    assert len(addon._distance_constraints(root)) == 0
+    assert len(addon.scene_data._distance_constraints(root)) == 0
 
     _select_only(_atom_object(collection, 1))
     _atom_object(collection, 0).select_set(True)
@@ -168,11 +168,11 @@ try:
     settings.angle_constraint_target = 109.5
     settings.angle_constraint_strength = 5.0
     assert addon.bpy.ops.blendmol.set_angle_constraint() == {"FINISHED"}
-    assert len(addon._angle_constraints(root)) == 1
+    assert len(addon.scene_data._angle_constraints(root)) == 1
     assert addon.bpy.ops.blendmol.remove_angle_constraint(remove_all=True) == {"FINISHED"}
-    assert len(addon._angle_constraints(root)) == 0
+    assert len(addon.scene_data._angle_constraints(root)) == 0
 
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     dihedral_path = None
     for bond_b in molecule.bonds:
         for bond_a in molecule.bonds:
@@ -206,19 +206,19 @@ try:
         settings.dihedral_constraint_strength = 2.0
         set_result = addon.bpy.ops.blendmol.set_dihedral_constraint()
         if set_result == {"FINISHED"}:
-            assert len(addon._dihedral_constraints(root)) == 1
+            assert len(addon.scene_data._dihedral_constraints(root)) == 1
             assert addon.bpy.ops.blendmol.remove_dihedral_constraint(remove_all=True) == {"FINISHED"}
-            assert len(addon._dihedral_constraints(root)) == 0
+            assert len(addon.scene_data._dihedral_constraints(root)) == 0
 
     # --- position snapshot save/restore -------------------------------------
     _select_only(_atom_object(collection, 0))
     assert addon.bpy.ops.blendmol.save_position_snapshot() == {"FINISHED"}
-    snapshot_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    snapshot_molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     atom_object = _atom_object(collection, 0)
     atom_object.location.x += 1.0
     addon.bpy.ops.blendmol.sync_atom_positions()
     assert addon.bpy.ops.blendmol.restore_position_snapshot() == {"FINISHED"}
-    restored_molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    restored_molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert math.dist(restored_molecule.atoms[0].position, snapshot_molecule.atoms[0].position) < 1e-6
 
     # --- relax_display_geometry (non-UFF) ------------------------------------
@@ -227,10 +227,10 @@ try:
     # --- jitter_atom_positions: emergency escape from a degenerate geometry -
     _select_only(_atom_object(collection, 0))
     assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}  # atom 0 stays put
-    before_jitter = addon._deserialize_molecule(root["blend_mol_data"])
+    before_jitter = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     settings.jitter_magnitude = 0.05
     assert addon.bpy.ops.blendmol.jitter_atom_positions() == {"FINISHED"}
-    after_jitter = addon._deserialize_molecule(root["blend_mol_data"])
+    after_jitter = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(after_jitter.atoms) == len(before_jitter.atoms)
     assert math.dist(after_jitter.atoms[0].position, before_jitter.atoms[0].position) < 1e-9, (
         "a fixed atom must not be jittered"
@@ -244,7 +244,7 @@ try:
         assert math.dist(before.position, after.position) <= 0.05 * math.sqrt(3) + 1e-9
     assert "blend_mol_position_snapshot" in root, "jitter must save a snapshot so it can be undone"
     assert addon.bpy.ops.blendmol.restore_position_snapshot() == {"FINISHED"}
-    restored_after_jitter = addon._deserialize_molecule(root["blend_mol_data"])
+    restored_after_jitter = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     for before, restored in zip(before_jitter.atoms, restored_after_jitter.atoms):
         assert math.dist(before.position, restored.position) < 1e-9
     # restore_position_snapshot rebuilds the display objects, clearing selection.
@@ -257,9 +257,9 @@ try:
     # geometry artifact of this test's atom placement, not a target for this
     # smoke test. Exercise the operator on triphenylene instead, which is
     # covered against external UFF references elsewhere in this repository.
-    uff_molecule = addon.read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
-    uff_root = addon._create_molecule(uff_molecule, settings, "uff_lifecycle")
-    uff_collection = addon._molecule_collection(uff_root)
+    uff_molecule = addon.molfile.read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
+    uff_root = addon.display._create_molecule(uff_molecule, settings, "uff_lifecycle")
+    uff_collection = addon.scene_data._molecule_collection(uff_root)
     _select_only(_atom_object(uff_collection, 0))
     settings.uff_iterations = 3
     minimize_result = addon.bpy.ops.blendmol.minimize_partial_uff()
@@ -270,69 +270,69 @@ try:
     # Methanol built from only its heavy atoms still has implicit hydrogens;
     # UFF only ever sees explicit atoms, so this must no longer error asking
     # the user to run "Make Implicit Hydrogens Explicit" by hand first.
-    methanol = addon.Molecule(
+    methanol = addon.molfile.Molecule(
         "Methanol regression",
-        (addon.Atom("C", (0, 0, 0)), addon.Atom("O", (1.43, 0, 0))),
-        (addon.Bond(0, 1, 1),),
+        (addon.molfile.Atom("C", (0, 0, 0)), addon.molfile.Atom("O", (1.43, 0, 0))),
+        (addon.molfile.Bond(0, 1, 1),),
     )
-    methanol_root = addon._create_molecule(methanol, settings, "uff_lifecycle")
-    methanol_collection = addon._molecule_collection(methanol_root)
-    assert len(addon._deserialize_molecule(methanol_root["blend_mol_data"]).atoms) == 2
+    methanol_root = addon.display._create_molecule(methanol, settings, "uff_lifecycle")
+    methanol_collection = addon.scene_data._molecule_collection(methanol_root)
+    assert len(addon.scene_data._deserialize_molecule(methanol_root["blend_mol_data"]).atoms) == 2
     _select_only(_atom_object(methanol_collection, 0))
     settings.uff_iterations = 3
     auto_result = addon.bpy.ops.blendmol.minimize_partial_uff()
     assert auto_result == {"FINISHED"}, auto_result
-    auto_molecule = addon._deserialize_molecule(methanol_root["blend_mol_data"])
+    auto_molecule = addon.scene_data._deserialize_molecule(methanol_root["blend_mol_data"])
     assert len(auto_molecule.atoms) == 6, "minimize_partial_uff must auto-explicitate implicit hydrogens"
     assert sum(1 for atom in auto_molecule.atoms if atom.element == "H") == 4
 
     # --- toggle_live_uff also auto-explicitates implicit hydrogens ----------
-    ethanol = addon.Molecule(
+    ethanol = addon.molfile.Molecule(
         "Ethanol regression",
-        (addon.Atom("C", (0, 0, 0)), addon.Atom("C", (1.5, 0, 0)), addon.Atom("O", (2.2, 1.2, 0))),
-        (addon.Bond(0, 1, 1), addon.Bond(1, 2, 1)),
+        (addon.molfile.Atom("C", (0, 0, 0)), addon.molfile.Atom("C", (1.5, 0, 0)), addon.molfile.Atom("O", (2.2, 1.2, 0))),
+        (addon.molfile.Bond(0, 1, 1), addon.molfile.Bond(1, 2, 1)),
     )
-    ethanol_root = addon._create_molecule(ethanol, settings, "uff_lifecycle")
-    ethanol_collection = addon._molecule_collection(ethanol_root)
+    ethanol_root = addon.display._create_molecule(ethanol, settings, "uff_lifecycle")
+    ethanol_collection = addon.scene_data._molecule_collection(ethanol_root)
     _select_only(_atom_object(ethanol_collection, 0))
     live_result = addon.bpy.ops.blendmol.toggle_live_uff(start_immediately=True)
     assert live_result == {"RUNNING_MODAL"}, live_result
-    live_molecule = addon._deserialize_molecule(ethanol_root["blend_mol_data"])
+    live_molecule = addon.scene_data._deserialize_molecule(ethanol_root["blend_mol_data"])
     assert len(live_molecule.atoms) == 9, "toggle_live_uff must auto-explicitate implicit hydrogens before starting"
     assert sum(1 for atom in live_molecule.atoms if atom.element == "H") == 6
     addon.bpy.ops.blendmol.toggle_live_uff()  # stop the running session
 
     # --- delete_atom re-indexes fixed atoms and constraints -----------------
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     atom_count_before_delete = len(molecule.atoms)
     _select_only(_atom_object(collection, 0))
     assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}
     _select_only(_atom_object(collection, 1))
     assert addon.bpy.ops.blendmol.delete_atom() == {"FINISHED"}
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     assert len(molecule.atoms) == atom_count_before_delete - 1
-    assert 0 in addon._fixed_atom_indices(root), "deleting a higher-index atom must not shift atom 0's fixed flag"
+    assert 0 in addon.scene_data._fixed_atom_indices(root), "deleting a higher-index atom must not shift atom 0's fixed flag"
 
     # --- delete_atom handles a multi-atom selection in one call -------------
     _select_only(_atom_object(ethanol_collection, 0))
     assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}
-    ethanol_before = addon._deserialize_molecule(ethanol_root["blend_mol_data"])
+    ethanol_before = addon.scene_data._deserialize_molecule(ethanol_root["blend_mol_data"])
     ethanol_count_before = len(ethanol_before.atoms)
     _select_only_many([_atom_object(ethanol_collection, 3), _atom_object(ethanol_collection, 4)])
     assert addon.bpy.ops.blendmol.delete_atom() == {"FINISHED"}
-    ethanol_after = addon._deserialize_molecule(ethanol_root["blend_mol_data"])
+    ethanol_after = addon.scene_data._deserialize_molecule(ethanol_root["blend_mol_data"])
     assert len(ethanol_after.atoms) == ethanol_count_before - 2
-    assert 0 in addon._fixed_atom_indices(ethanol_root), (
+    assert 0 in addon.scene_data._fixed_atom_indices(ethanol_root), (
         "deleting two higher-index atoms together must not shift atom 0's fixed flag"
     )
 
     # --- delete_bond ----------------------------------------------------------
-    molecule = addon._deserialize_molecule(root["blend_mol_data"])
+    molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
     if molecule.bonds:
         _select_only(_bond_object(collection, 0))
         bond_count_before = len(molecule.bonds)
         assert addon.bpy.ops.blendmol.delete_bond() == {"FINISHED"}
-        molecule = addon._deserialize_molecule(root["blend_mol_data"])
+        molecule = addon.scene_data._deserialize_molecule(root["blend_mol_data"])
         assert len(molecule.bonds) == bond_count_before - 1
 
     # --- rebuild_display / add_subdivision / reset_element_colors -----------
@@ -436,12 +436,12 @@ try:
 
     smiles_result = addon.bpy.ops.blendmol.import_smiles(smiles="c1ccccc1O", molecule_name="phenol")
     assert smiles_result == {"FINISHED"}, smiles_result
-    phenol_root = addon._selected_molecule_root(addon.bpy.context)
-    phenol_molecule = addon._deserialize_molecule(phenol_root["blend_mol_data"])
+    phenol_root = addon.scene_data._selected_molecule_root(addon.bpy.context)
+    phenol_molecule = addon.scene_data._deserialize_molecule(phenol_root["blend_mol_data"])
     assert len(phenol_molecule.atoms) == 7, "benzene ring plus hydroxyl oxygen"
 
     try:
-        addon.read_smiles("not a smiles (((", "bad")
+        addon.molfile.read_smiles("not a smiles (((", "bad")
         assert False, "malformed SMILES must raise MolfileError"
     except MolfileError:
         pass
@@ -456,12 +456,12 @@ try:
         smiles="OC[C@@H]1OC(O)[C@H](O)[C@@H](O)[C@H]1O", molecule_name="sugar",
     )
     assert sugar_result == {"FINISHED"}, sugar_result
-    sugar_root = addon._selected_molecule_root(addon.bpy.context)
-    sugar_collection = addon._molecule_collection(sugar_root)
+    sugar_root = addon.scene_data._selected_molecule_root(addon.bpy.context)
+    sugar_collection = addon.scene_data._molecule_collection(sugar_root)
     _select_only(_atom_object(sugar_collection, 0))
     assert addon.bpy.ops.blendmol.make_hydrogens_explicit() == {"FINISHED"}
-    sugar_molecule = addon._deserialize_molecule(sugar_root["blend_mol_data"])
-    sugar_minimize = addon.minimize_partial_energy(sugar_molecule, 30, 0.02)
+    sugar_molecule = addon.scene_data._deserialize_molecule(sugar_root["blend_mol_data"])
+    sugar_minimize = addon.uff.minimize_partial_energy(sugar_molecule, 30, 0.02)
     assert sugar_minimize.ready, sugar_minimize.messages
 
     print(

@@ -1,6 +1,7 @@
 """Blender-side smoke test for add-on registration and background UFF work."""
 
 import importlib
+import json
 import math
 import sys
 import threading
@@ -23,7 +24,7 @@ from blend_mol.uff import (
 
 addon.register()
 try:
-    native_status = addon.backend_status()
+    native_status = addon.native_backend.backend_status()
     assert native_status["native_available"], native_status["detail"]
     stopped_operator = type("StoppedLiveUffOperator", (), {})()
     stopped_operator._timer = None
@@ -54,10 +55,10 @@ try:
     # self.report and nothing in the panel reading that property back --
     # it stopped the session with no visible sign anything went wrong.
     # _set_live_error must do both: store it AND report it.
-    error_probe_molecule = addon.Molecule(
-        "Error probe", (addon.Atom("C", (0, 0, 0)),), (),
+    error_probe_molecule = addon.molfile.Molecule(
+        "Error probe", (addon.molfile.Atom("C", (0, 0, 0)),), (),
     )
-    error_probe_root = addon._create_molecule(
+    error_probe_root = addon.display._create_molecule(
         error_probe_molecule, addon.bpy.context.scene.blend_mol_settings, "error_probe",
     )
     stopped_operator._set_live_error(
@@ -82,35 +83,35 @@ try:
         stopped_operator, addon.bpy.context, late_timer
     ) == {"CANCELLED"}
     molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
-    root = addon._create_molecule(molecule, addon.bpy.context.scene.blend_mol_settings, "smoke")
-    collection = addon._molecule_collection(root)
+    root = addon.display._create_molecule(molecule, addon.bpy.context.scene.blend_mol_settings, "smoke")
+    collection = addon.scene_data._molecule_collection(root)
     atom_object = next(obj for obj in collection.objects
                        if obj.get("blend_mol_kind") == "atom"
                        and not obj.get("blend_mol_implicit")
                        and obj.get("blend_mol_atom_index") == 0)
-    assert not addon._explicit_atom_has_moved(root, atom_object, 0)
+    assert not addon.live_uff._explicit_atom_has_moved(root, atom_object, 0)
     atom_object.location.x += 0.2
     addon.bpy.context.view_layer.update()
-    assert addon._explicit_atom_has_moved(root, atom_object, 0)
+    assert addon.live_uff._explicit_atom_has_moved(root, atom_object, 0)
     atom_object.location.x -= 0.2
     addon.bpy.context.view_layer.update()
-    assert not addon._explicit_atom_has_moved(root, atom_object, 0)
+    assert not addon.live_uff._explicit_atom_has_moved(root, atom_object, 0)
     for handlers in (addon.bpy.app.handlers.undo_pre, addon.bpy.app.handlers.redo_pre,
                      addon.bpy.app.handlers.load_pre):
-        assert addon._invalidate_live_uff_before_history_change in handlers
-    addon._AUTO_LIVE_UFF_TIMER_PENDING = True
-    addon._AUTO_LIVE_UFF_TARGET = (root.name, atom_object.name, 0)
-    addon.bpy.app.timers.register(addon._start_auto_live_uff, first_interval=60)
-    addon._LIVE_UFF_OPERATOR = stopped_operator
+        assert addon.live_uff._invalidate_live_uff_before_history_change in handlers
+    addon.live_uff.STATE.auto_timer_pending = True
+    addon.live_uff.STATE.auto_target = (root.name, atom_object.name, 0)
+    addon.bpy.app.timers.register(addon.live_uff._start_auto_live_uff, first_interval=60)
+    addon.live_uff.STATE.operator = stopped_operator
     stopped_operator._stop_requested = False
     stopped_operator._cancel_event = threading.Event()
     cancellation = stopped_operator._cancel_event
-    addon._invalidate_live_uff_before_history_change()
+    addon.live_uff._invalidate_live_uff_before_history_change()
     assert cancellation.is_set()
-    assert addon._LIVE_UFF_OPERATOR is None
-    assert not addon._AUTO_LIVE_UFF_TIMER_PENDING
-    assert addon._AUTO_LIVE_UFF_TARGET is None
-    assert not addon.bpy.app.timers.is_registered(addon._start_auto_live_uff)
+    assert addon.live_uff.STATE.operator is None
+    assert not addon.live_uff.STATE.auto_timer_pending
+    assert addon.live_uff.STATE.auto_target is None
+    assert not addon.bpy.app.timers.is_registered(addon.live_uff._start_auto_live_uff)
     escape = type("CancelEvent", (), {"type": "ESC", "value": "PRESS"})()
     stopped_operator._stop_requested = False
     assert addon.BLENDMOL_OT_toggle_live_uff.modal(
@@ -124,19 +125,19 @@ try:
     object_pointers = {obj.name: obj.as_pointer() for obj in collection.objects}
     for cancel_type in ("ESC", "RIGHTMOUSE"):
         stopped_operator._root_name = root.name
-        stopped_operator._topology_revision = addon._molecule_revision(root)
-        stopped_operator._topology_at_start = addon._topology_signature(molecule)
-        stopped_operator._initial_positions = addon._serialize_positions(molecule)
+        stopped_operator._topology_revision = addon.scene_data._molecule_revision(root)
+        stopped_operator._topology_at_start = addon.scene_data._topology_signature(molecule)
+        stopped_operator._initial_positions = addon.scene_data._serialize_positions(molecule)
         stopped_operator._initial_live_log = "previous successful log"
         stopped_operator._applied_results = 2
         stopped_operator._stop_requested = False
-        distorted = addon.Molecule(molecule.name, tuple(
-            addon.Atom(atom.element, (atom.position[0] + 0.3, atom.position[1], atom.position[2]),
+        distorted = addon.molfile.Molecule(molecule.name, tuple(
+            addon.molfile.Atom(atom.element, (atom.position[0] + 0.3, atom.position[1], atom.position[2]),
                        atom.formal_charge, atom.chirality)
             for atom in molecule.atoms
         ), molecule.bonds)
-        root["blend_mol_data"] = addon._serialize_molecule(distorted)
-        assert addon._update_explicit_display_geometry(root, collection, distorted, settings)
+        root["blend_mol_data"] = addon.scene_data._serialize_molecule(distorted)
+        assert addon.display._update_explicit_display_geometry(root, collection, distorted, settings)
         root["blend_mol_uff_live_last"] = "cancelled calculation log"
         stopped_operator._cancel_event = threading.Event()
         cancel_signal = stopped_operator._cancel_event
@@ -149,7 +150,7 @@ try:
         stopped_operator._worker = old_worker
         old_worker.submit(distorted)
         assert started.wait(5)
-        addon._LIVE_UFF_OPERATOR = stopped_operator
+        addon.live_uff.STATE.operator = stopped_operator
         cancel_event = type("CancelEvent", (), {"type": cancel_type, "value": "PRESS"})()
         assert addon.BLENDMOL_OT_toggle_live_uff.modal(
             stopped_operator, addon.bpy.context, cancel_event
@@ -177,54 +178,54 @@ try:
         addon.bpy.context.view_layer.objects.active = atom_object
         settings.uff_live_auto_start = True
         addon.bpy.context.view_layer.update()
-        assert not addon._AUTO_LIVE_UFF_TIMER_PENDING
-        assert not addon.bpy.app.timers.is_registered(addon._start_auto_live_uff)
+        assert not addon.live_uff.STATE.auto_timer_pending
+        assert not addon.bpy.app.timers.is_registered(addon.live_uff._start_auto_live_uff)
         settings.uff_live_auto_start = False
     # A changed topology must never receive coordinates from an old session.
     stopped_operator._topology_revision -= 1
-    root["blend_mol_data"] = addon._serialize_molecule(distorted)
+    root["blend_mol_data"] = addon.scene_data._serialize_molecule(distorted)
     stopped_operator._cancel_and_restore(addon.bpy.context)
-    assert root["blend_mol_data"] == addon._serialize_molecule(distorted)
+    assert root["blend_mol_data"] == addon.scene_data._serialize_molecule(distorted)
     assert "structure changed" in root["blend_mol_live_uff_error"]
     root["blend_mol_data"] = initial_data
-    assert addon._update_explicit_display_geometry(root, collection, molecule, settings)
+    assert addon.display._update_explicit_display_geometry(root, collection, molecule, settings)
     del root["blend_mol_live_uff_error"]
     print("BLEND_MOL_CANCEL_RESTORE_OK", "escape", "right_click", "stale_result", "topology_guard", "error_reported")
-    original_revision = addon._molecule_revision(root)
-    moved_only = addon.Molecule(
+    original_revision = addon.scene_data._molecule_revision(root)
+    moved_only = addon.molfile.Molecule(
         molecule.name,
-        (addon.Atom(molecule.atoms[0].element, (9.0, 0.0, 0.0)),) + molecule.atoms[1:],
+        (addon.molfile.Atom(molecule.atoms[0].element, (9.0, 0.0, 0.0)),) + molecule.atoms[1:],
         molecule.bonds,
     )
-    assert addon._topology_signature(moved_only) == addon._topology_signature(molecule)
-    changed = addon.Molecule(
+    assert addon.scene_data._topology_signature(moved_only) == addon.scene_data._topology_signature(molecule)
+    changed = addon.molfile.Molecule(
         molecule.name,
-        (addon.Atom("N", molecule.atoms[0].position),) + molecule.atoms[1:],
+        (addon.molfile.Atom("N", molecule.atoms[0].position),) + molecule.atoms[1:],
         molecule.bonds,
     )
-    assert addon._topology_signature(changed) != addon._topology_signature(molecule)
-    addon._store_topology_change(root, changed)
-    assert addon._molecule_revision(root) == original_revision + 1
-    initial_positions = addon._serialize_positions(changed)
-    assert addon._store_live_uff_session(
-        root, initial_positions, addon._topology_signature(changed), 0, 3
+    assert addon.scene_data._topology_signature(changed) != addon.scene_data._topology_signature(molecule)
+    addon.scene_data._store_topology_change(root, changed)
+    assert addon.scene_data._molecule_revision(root) == original_revision + 1
+    initial_positions = addon.scene_data._serialize_positions(changed)
+    assert addon.scene_data._store_live_uff_session(
+        root, initial_positions, addon.scene_data._topology_signature(changed), 0, 3
     )
-    session = addon.json.loads(root["blend_mol_live_uff_session"])
+    session = json.loads(root["blend_mol_live_uff_session"])
     assert session["applied_updates"] == 3
     initial_distance = math.dist(molecule.atoms[0].position, molecule.atoms[10].position)
     target_distance = initial_distance + 0.25
-    addon._store_distance_constraints(root, ((0, 10, target_distance, 5000.0),))
-    assert addon._distance_constraints(root) == ((0, 10, target_distance, 5000.0),)
+    addon.scene_data._store_distance_constraints(root, ((0, 10, target_distance, 5000.0),))
+    assert addon.scene_data._distance_constraints(root) == ((0, 10, target_distance, 5000.0),)
     constrained = minimize_partial_energy(
-        molecule, 40, 0.03, {0}, addon._distance_constraints(root)
+        molecule, 40, 0.03, {0}, addon.scene_data._distance_constraints(root)
     )
     final_distance = math.dist(
         constrained.molecule.atoms[0].position, constrained.molecule.atoms[10].position
     )
     assert abs(final_distance - target_distance) < abs(initial_distance - target_distance)
     angle_term = (0, 1, 2, math.radians(110.0), 1000.0)
-    addon._store_angle_constraints(root, (angle_term,))
-    stored_angle = addon._angle_constraints(root)
+    addon.scene_data._store_angle_constraints(root, (angle_term,))
+    stored_angle = addon.scene_data._angle_constraints(root)
     assert len(stored_angle) == 1
     assert stored_angle[0][:3] == angle_term[:3]
     assert math.isclose(stored_angle[0][3], angle_term[3])
@@ -233,8 +234,8 @@ try:
     )
     assert angle_constrained.ready
     dihedral_term = (0, 1, 2, 3, math.radians(10.0), 500.0)
-    addon._store_dihedral_constraints(root, (dihedral_term,))
-    stored_dihedral = addon._dihedral_constraints(root)
+    addon.scene_data._store_dihedral_constraints(root, (dihedral_term,))
+    stored_dihedral = addon.scene_data._dihedral_constraints(root)
     assert len(stored_dihedral) == 1
     assert stored_dihedral[0][:4] == dihedral_term[:4]
     dihedral_constrained = minimize_partial_energy(
