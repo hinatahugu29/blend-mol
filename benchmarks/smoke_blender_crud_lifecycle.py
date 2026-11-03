@@ -5,7 +5,7 @@ no file-select invoke needed when a filepath/property is already supplied),
 so they can be driven directly through ``bpy.ops.blendmol.*`` from a
 background script. Before this test, the only automated coverage for the
 basic atom/bond CRUD, constraint, snapshot, import/export, and display
-operators was manual verification recorded in ROADMAP.md; none of it ran
+operators was manual verification recorded in ROADMAP_HISTORY.md; none of it ran
 under ``--python-exit-code 1`` where a real exception would fail the run.
 
 This drives one continuous session through: molecule creation, atom/bond

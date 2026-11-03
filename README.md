@@ -42,7 +42,8 @@ Current capabilities include starting from an empty scene, importing and exporti
 ## More
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
-- Development roadmap and performance criteria: [`ROADMAP.md`](ROADMAP.md)
+- Development roadmap and quality gates: [`ROADMAP.md`](ROADMAP.md)
+- Development log and measurements up to 0.1.81: [`ROADMAP_HISTORY.md`](ROADMAP_HISTORY.md)
 - AvogadroLibs design review: [`AVOGADRO_REVIEW.md`](AVOGADRO_REVIEW.md)
 - Rust backend design and fallback behavior: [`RUST_BACKEND.md`](RUST_BACKEND.md)
 - Reproducible validation commands: [`benchmarks/README.md`](benchmarks/README.md)

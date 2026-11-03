@@ -209,5 +209,5 @@ hydrogens from its bond orders.
 
 ## Roadmap
 
-The implementation roadmap, including the planned built-in UFF optimizer, is in
-[`ROADMAP.md`](ROADMAP.md).
+The forward-looking roadmap is in [`ROADMAP.md`](../ROADMAP.md); the development
+log up to 0.1.81 is in [`ROADMAP_HISTORY.md`](../ROADMAP_HISTORY.md).

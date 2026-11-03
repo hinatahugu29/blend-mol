@@ -18,7 +18,7 @@ Before this test, these operators (add/delete atom and bond, element and
 charge edits, fixed atoms, all three constraint kinds, position snapshots,
 non-UFF relax, partial UFF minimization, rebuild/sync/subdivision/colors, and
 every import/export format) had only manual verification recorded in
-ROADMAP.md, none of it under `--python-exit-code 1`:
+ROADMAP_HISTORY.md, none of it under `--python-exit-code 1`:
 
 ```powershell
 & 'D:\SteamLibrary\steamapps\common\Blender\blender.exe' --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_crud_lifecycle.py
@@ -107,7 +107,7 @@ It reports medians for two deliberately different workloads:
   aromatic case.
 
 The 30 / roughly 100 / 300 atom sizes are the release decision points recorded
-in `ROADMAP.md`. Times do not include Blender mesh updates, so they are a lower
+in `ROADMAP_HISTORY.md`. Times do not include Blender mesh updates, so they are a lower
 bound for interactive latency.
 
 To compare the first Rust kernel directly with its Python reference:
@@ -158,7 +158,7 @@ python benchmarks\compare_openbabel_heteroatom_matrix.py
 Bond, angle, and torsion energies all match to within 0.5 kJ/mol for every
 molecule here (torsion within 0.1 kJ/mol), after fixing two dispatch bugs
 in `_torsion_parameters` found by reading Open Babel 3.1.1's own
-`forcefielduff.cpp` directly (see ROADMAP.md's 0.1.63 entry). The
+`forcefielduff.cpp` directly (see ROADMAP_HISTORY.md's 0.1.63 entry). The
 synthetic phosphine-oxide/DMSO geometries are hand-placed and not energy
 minimized, so their van der Waals totals disagree sharply (steric clashes
 dominate the r^-12 term); that is a benchmark geometry artifact, not a
