@@ -31,13 +31,15 @@ class ElementInfo:
     max_valence: int
     # Whether the SMILES reader accepts this element.
     smiles: bool
+    # Whether it is offered in the editor's element list.
+    in_editor: bool = True
 
 
 # The order matters: it is the order of the editor's element EnumProperty,
 # whose stored value is an index. Append new elements at the end so existing
 # .blend files keep their selected element.
 _ELEMENT_RECORDS = (
-    ElementInfo("H", (0.92, 0.92, 0.92, 1.0), 0.22, 0.31, 1, 1, False),
+    ElementInfo("H", (0.92, 0.92, 0.92, 1.0), 0.22, 0.31, 1, 1, True),  # bracket only: [2H], [H]
     ElementInfo("C", (0.18, 0.18, 0.18, 1.0), 0.34, 0.76, 4, 4, True),
     ElementInfo("N", (0.12, 0.26, 0.80, 1.0), 0.33, 0.71, 3, 3, True),
     ElementInfo("O", (0.82, 0.08, 0.08, 1.0), 0.31, 0.66, 2, 2, True),
@@ -48,8 +50,13 @@ _ELEMENT_RECORDS = (
     ElementInfo("Br", (0.45, 0.12, 0.05, 1.0), 0.39, 1.20, 1, 1, True),
     ElementInfo("I", (0.36, 0.08, 0.62, 1.0), 0.43, 1.39, 1, 1, True),
     ElementInfo("B", (1.00, 0.71, 0.71, 1.0), 0.33, 0.84, 3, 3, True),
-    ElementInfo("Si", (0.94, 0.78, 0.63, 1.0), 0.40, 1.11, 4, 4, False),
+    ElementInfo("Si", (0.94, 0.78, 0.63, 1.0), 0.40, 1.11, 4, 4, True),
+    # SMILES/MOL wildcard: a placeholder for "any atom". It takes no implicit
+    # hydrogens and has no UFF type, so UFF refuses a molecule containing it.
+    ElementInfo("*", (0.55, 0.55, 0.55, 1.0), 0.25, 0.80, 0, 8, True, in_editor=False),
 )
+
+DUMMY_SYMBOL = "*"
 
 ELEMENTS: dict[str, ElementInfo] = {record.symbol: record for record in _ELEMENT_RECORDS}
 
@@ -58,7 +65,8 @@ UNKNOWN_COLOR = (0.65, 0.25, 0.65, 1.0)
 UNKNOWN_DISPLAY_RADIUS = 0.34
 UNKNOWN_COVALENT_RADIUS = 0.8
 
-ELEMENT_SYMBOLS = tuple(record.symbol for record in _ELEMENT_RECORDS)
+# The editor's element list (excludes the wildcard).
+ELEMENT_SYMBOLS = tuple(record.symbol for record in _ELEMENT_RECORDS if record.in_editor)
 ELEMENT_COLORS = {symbol: info.color for symbol, info in ELEMENTS.items()}
 ELEMENT_RADII = {symbol: info.display_radius for symbol, info in ELEMENTS.items()}
 COVALENT_RADII = {symbol: info.covalent_radius for symbol, info in ELEMENTS.items()}

@@ -6,8 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "blend_mol"))
 from elements import (
-    COVALENT_RADII, ELEMENT_COLORS, ELEMENT_RADII, ELEMENT_SYMBOLS, ELEMENTS, MAX_VALENCE,
-    SMILES_ELEMENTS, TYPICAL_VALENCE, charged_typical_valence,
+    COVALENT_RADII, DUMMY_SYMBOL, ELEMENT_COLORS, ELEMENT_RADII, ELEMENT_SYMBOLS, ELEMENTS,
+    MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, charged_typical_valence,
 )
 from molfile import Atom, Bond, Molecule, _max_legitimate_valence, _target_valence, read_smiles
 from uff import UFF_PARAMETERS, _implicit_hydrogen_count, type_molecule
@@ -21,7 +21,8 @@ class TestElementTable(unittest.TestCase):
     def test_derived_tables_cover_every_element(self):
         for table in (ELEMENT_COLORS, ELEMENT_RADII, COVALENT_RADII, TYPICAL_VALENCE, MAX_VALENCE):
             self.assertEqual(set(table), set(ELEMENTS))
-        self.assertEqual(set(ELEMENT_SYMBOLS), set(ELEMENTS))
+        # The editor lists every element except the wildcard placeholder.
+        self.assertEqual(set(ELEMENT_SYMBOLS), set(ELEMENTS) - {DUMMY_SYMBOL})
         self.assertEqual(len(ELEMENT_SYMBOLS), len(set(ELEMENT_SYMBOLS)))
 
     def test_editor_element_order_is_stable(self):
@@ -48,7 +49,7 @@ class TestElementTable(unittest.TestCase):
 
     def test_every_smiles_element_has_a_uff_type(self):
         uff_elements = {_uff_type_element(name) for name in UFF_PARAMETERS}
-        self.assertLessEqual(SMILES_ELEMENTS, uff_elements)
+        self.assertLessEqual(SMILES_ELEMENTS - {DUMMY_SYMBOL}, uff_elements)
 
     def test_halogens_have_their_own_display_radius(self):
         radii = [ELEMENT_RADII[symbol] for symbol in ("F", "Cl", "Br", "I")]

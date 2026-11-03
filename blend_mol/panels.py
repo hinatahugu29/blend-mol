@@ -139,8 +139,11 @@ class BLENDMOL_PT_edit(Panel):
             fixed_atoms = _fixed_atom_indices(root)
             state = "fixed" if selected_atom[2] in fixed_atoms else "movable"
             molecule = _deserialize_molecule(root["blend_mol_data"])
-            charge = molecule.atoms[selected_atom[2]].formal_charge
-            atom_box.label(text=f"Selected atom: {selected_atom[2] + 1} ({state}, {charge:+d})")
+            selected = molecule.atoms[selected_atom[2]]
+            label = f"Selected atom: {selected_atom[2] + 1} ({state}, {selected.formal_charge:+d})"
+            if selected.isotope:
+                label += f", isotope {selected.isotope}{selected.element}"
+            atom_box.label(text=label)
             atom_box.operator(BLENDMOL_OT_change_atom_element.bl_idname, icon="MODIFIER")
             atom_box.operator(BLENDMOL_OT_set_formal_charge.bl_idname, icon="ADD")
             atom_box.operator(BLENDMOL_OT_toggle_fixed_atom.bl_idname, icon="PINNED")

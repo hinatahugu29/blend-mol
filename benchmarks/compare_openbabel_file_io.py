@@ -42,6 +42,9 @@ SMILES = {
     "imidazole": "c1c[nH]cn1",
     "aspirin": "CC(=O)Oc1ccccc1C(=O)O",
     "acetate": "CC(=O)[O-]",
+    "labelled methanol": "[13CH3][18OH]",
+    "heavy water": "[2H]O[2H]",
+    "tetramethylsilane": "C[Si](C)(C)C",
 }
 
 
@@ -148,6 +151,9 @@ def main() -> int:
                     print(f"FAIL {name} ({label}): {exc}")
                     failures += 1
                     continue
+                if [a.isotope for a in ours.atoms] != [a.isotope for a in reference.atoms]:
+                    print(f"FAIL {name} ({label}): isotopes differ from Open Babel's file")
+                    failures += 1
                 if edge_set(ours) != edge_set(reference):
                     print(f"FAIL {name} ({label}): connectivity differs from Open Babel")
                     failures += 1

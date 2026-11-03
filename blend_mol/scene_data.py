@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import replace
 from datetime import datetime
 from itertools import permutations
 
@@ -14,12 +15,20 @@ import bpy
 from .molfile import _max_legitimate_valence, Atom, Bond, Molecule
 
 
+def _serialize_atom(atom: Atom) -> dict:
+    data = {"element": atom.element, "position": atom.position, "formal_charge": atom.formal_charge,
+            "chirality": atom.chirality}
+    # Written only when set, so molecules without isotopes keep the same payload.
+    if atom.isotope is not None:
+        data["isotope"] = atom.isotope
+    return data
+
+
 def _serialize_molecule(molecule: Molecule) -> str:
     return json.dumps({
         "name": molecule.name,
         "atoms": [
-            {"element": atom.element, "position": atom.position, "formal_charge": atom.formal_charge,
-             "chirality": atom.chirality}
+            _serialize_atom(atom)
             for atom in molecule.atoms
         ],
         "bonds": [
@@ -71,7 +80,8 @@ def _deserialize_molecule(payload: str) -> Molecule:
     return Molecule(
         name=data["name"],
         atoms=tuple(
-            Atom(atom["element"], tuple(atom["position"]), atom.get("formal_charge", 0), atom.get("chirality"))
+            Atom(atom["element"], tuple(atom["position"]), atom.get("formal_charge", 0), atom.get("chirality"),
+                 atom.get("isotope"))
             for atom in data["atoms"]
         ),
         bonds=tuple(
@@ -257,7 +267,7 @@ def _sync_atom_positions(root: bpy.types.Object, collection: bpy.types.Collectio
     if set(positions) != expected:
         raise ValueError("Displayed atoms no longer match the stored molecule data")
     updated_atoms = tuple(
-        Atom(atom.element, positions[index], atom.formal_charge, atom.chirality)
+        replace(atom, position=positions[index])
         for index, atom in enumerate(molecule.atoms)
     )
     updated = Molecule(molecule.name, updated_atoms, molecule.bonds)
@@ -326,7 +336,7 @@ def _apply_serialized_positions(molecule: Molecule, serialized: str) -> Molecule
     if len(positions) != len(molecule.atoms):
         raise ValueError("The saved coordinates belong to a different atom count")
     atoms = tuple(
-        Atom(atom.element, tuple(positions[index]), atom.formal_charge, atom.chirality)
+        replace(atom, position=tuple(positions[index]))
         for index, atom in enumerate(molecule.atoms)
     )
     return Molecule(molecule.name, atoms, molecule.bonds)

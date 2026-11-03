@@ -493,6 +493,40 @@ try:
     phenol_molecule = addon.scene_data._deserialize_molecule(phenol_root["blend_mol_data"])
     assert len(phenol_molecule.atoms) == 7, "benzene ring plus hydroxyl oxygen"
 
+    # Isotope labels survive storage, editing and export, and are dropped
+    # when the atom's element changes.
+    assert addon.bpy.ops.blendmol.import_smiles(smiles="[13CH3]O", molecule_name="labelled") == {"FINISHED"}
+    labelled_root = addon.scene_data._selected_molecule_root(addon.bpy.context)
+    labelled_collection = addon.scene_data._molecule_collection(labelled_root)
+
+    def _labelled():
+        return addon.scene_data._deserialize_molecule(labelled_root["blend_mol_data"])
+
+    assert _labelled().atoms[0].isotope == 13
+    _select_only(_atom_object(labelled_collection, 0))
+    assert addon.bpy.ops.blendmol.make_hydrogens_explicit() == {"FINISHED"}
+    assert _labelled().atoms[0].isotope == 13, "making hydrogens explicit must keep the label"
+    labelled_collection = addon.scene_data._molecule_collection(labelled_root)
+    _select_only(_atom_object(labelled_collection, 0))
+    settings.formal_charge = 0
+    assert addon.bpy.ops.blendmol.set_formal_charge() == {"FINISHED"}
+    assert _labelled().atoms[0].isotope == 13, "changing the charge must keep the label"
+    with tempfile.TemporaryDirectory() as tmp:
+        labelled_path = Path(tmp) / "labelled.mol"
+        labelled_export = addon.BLENDMOL_OT_export_v2000.execute(
+            type("ExportOp", (), {"filepath": str(labelled_path), "version": "V2000",
+                                  "report": lambda *_args: None})(),
+            addon.bpy.context,
+        )
+        assert labelled_export == {"FINISHED"}, labelled_export
+        assert "M  ISO  1   1  13" in labelled_path.read_text(encoding="utf-8")
+    labelled_collection = addon.scene_data._molecule_collection(labelled_root)
+    _select_only(_atom_object(labelled_collection, 0))
+    settings.edit_element = "Si"
+    assert addon.bpy.ops.blendmol.change_atom_element() == {"FINISHED"}
+    assert _labelled().atoms[0].isotope is None, "a new element must not keep the old mass number"
+    settings.edit_element = "C"
+
     try:
         addon.molfile.read_smiles("not a smiles (((", "bad")
         assert False, "malformed SMILES must raise MolfileError"
@@ -540,6 +574,7 @@ try:
         "export_uff_report_ok",
         "missing_file_import_cancelled_ok",
         "smiles_import_ok",
+        "isotope_labels_survive_edits_and_export_ok",
         "malformed_smiles_raises_ok",
         "ring_stereocenter_sugar_minimizes_ok",
     )

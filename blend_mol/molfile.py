@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import math
 import re
 
 try:
     from .elements import (
-        COVALENT_RADII, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, UNKNOWN_COVALENT_RADIUS,
-        charged_typical_valence,
+        COVALENT_RADII, DUMMY_SYMBOL, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE,
+        UNKNOWN_COVALENT_RADIUS, charged_typical_valence,
     )
 except ImportError:  # Enables the small module to be tested outside Blender.
     from elements import (
-        COVALENT_RADII, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, UNKNOWN_COVALENT_RADIUS,
-        charged_typical_valence,
+        COVALENT_RADII, DUMMY_SYMBOL, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE,
+        UNKNOWN_COVALENT_RADIUS, charged_typical_valence,
     )
 
 
@@ -25,6 +25,9 @@ class Atom:
     position: tuple[float, float, float]
     formal_charge: int = 0
     chirality: str | None = None
+    # Mass number for an isotope label (13 for carbon-13); None means the
+    # natural abundance mixture. UFF ignores it.
+    isotope: int | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,12 @@ class MolfileError(ValueError):
 
 
 _SMILES_ELEMENTS = SMILES_ELEMENTS
+_SMILES_ORGANIC_SUBSET = {"B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"}
+_SMILES_BRACKET = re.compile(
+    r"(?P<isotope>\d+)?(?P<element>[A-Z][a-z]?|[bcnops]|\*)"
+    r"(?P<chirality>@@|@TH[12]|@)?(?P<hydrogens>H(?P<hcount>\d*))?"
+    r"(?P<charge>[+-](?:\d+)?|\d+[+-]|\+\+|--)?"
+)
 _SMILES_AROMATIC = {"b": "B", "c": "C", "n": "N", "o": "O", "p": "P", "s": "S"}
 
 
@@ -465,10 +474,11 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
 
     def add_atom(
         element: str, charge: int, aromatic: bool = False, chirality: str | None = None,
+        isotope: int | None = None,
     ) -> None:
         nonlocal current
         atom_index = len(atoms)
-        atoms.append(Atom(element, (0.0, 0.0, 0.0), charge, chirality))
+        atoms.append(Atom(element, (0.0, 0.0, 0.0), charge, chirality, isotope))
         aromatic_atoms.append(aromatic)
         if current is not None:
             bonds.append(Bond(current, atom_index, pending_order, pending_stereo))
@@ -533,15 +543,25 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
             if closing < 0:
                 raise MolfileError("SMILES bracket atom is not closed.")
             token = text[index + 1:closing]
-            match = re.fullmatch(
-                r"(?:\d*)?([A-Z][a-z]?|[bcnops])(@@?)?(H(\d*)?)?([+-](?:\d+)?|\d+[+-])?", token
-            )
-            raw_element = match.group(1) if match else ""
+            match = _SMILES_BRACKET.fullmatch(token)
+            raw_element = match.group("element") if match else ""
             aromatic = raw_element in _SMILES_AROMATIC
             element = _SMILES_AROMATIC.get(raw_element, raw_element)
-            if not match or element not in _SMILES_ELEMENTS:
+            if not match:
+                stereo = re.search(r"@(?!@)([A-Z]{2}\d*)", token)
+                if stereo and stereo.group(1) not in {"TH1", "TH2"}:
+                    raise MolfileError(
+                        f"SMILES stereo class @{stereo.group(1)} in [{token}] is not supported; "
+                        "only @, @@, @TH1 and @TH2 are."
+                    )
                 raise MolfileError(f"SMILES bracket atom [{token}] is not supported.")
-            charge_text = match.group(5) or ""
+            if element not in _SMILES_ELEMENTS:
+                raise MolfileError(f"SMILES bracket atom [{token}] is not supported.")
+            isotope = int(match.group("isotope")) if match.group("isotope") else None
+            if isotope == 0:
+                raise MolfileError(f"SMILES isotope 0 in [{token}] is not a mass number.")
+            chirality = {"@": "@", "@@": "@@", "@TH1": "@", "@TH2": "@@"}.get(match.group("chirality") or "")
+            charge_text = match.group("charge") or ""
             if charge_text.endswith("+") or charge_text.endswith("-"):
                 sign = 1 if charge_text.endswith("+") else -1
                 digits = charge_text[:-1]
@@ -549,23 +569,28 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
                 sign = 1 if charge_text.startswith("+") else -1
                 digits = charge_text[1:]
             charge = sign * int(digits or "1") if charge_text else 0
-            add_atom(element, charge, aromatic, match.group(2))
-            if aromatic and match.group(3):
-                hydrogen_count = int(match.group(4) or "1")
-                if hydrogen_count != 1:
-                    raise MolfileError("Aromatic bracket atoms support one hydrogen at most.")
+            add_atom(element, charge, aromatic, chirality, isotope)
+            if aromatic and match.group("hydrogens"):
+                # Aromatic atoms need their H explicit so Kekulization sees
+                # the filled valence (pyrrole [nH], pyridinium [nH+], [nH2+]).
+                hydrogen_count = int(match.group("hcount") or "1")
                 parent = current
-                atoms.append(Atom("H", (0.0, 0.0, 0.0)))
-                aromatic_atoms.append(False)
-                bonds.append(Bond(parent, len(atoms) - 1, 1))
+                for _hydrogen in range(hydrogen_count):
+                    atoms.append(Atom("H", (0.0, 0.0, 0.0)))
+                    aromatic_atoms.append(False)
+                    bonds.append(Bond(parent, len(atoms) - 1, 1))
             index = closing + 1
+        elif character == "*":
+            add_atom(DUMMY_SYMBOL, 0)
+            index += 1
         elif character.isalpha():
             if character in _SMILES_AROMATIC:
                 add_atom(_SMILES_AROMATIC[character], 0, True)
                 index += 1
                 continue
             token = text[index:index + 2] if text[index:index + 2] in {"Cl", "Br"} else character
-            if token not in _SMILES_ELEMENTS:
+            # Only the organic subset may be written without brackets.
+            if token not in _SMILES_ORGANIC_SUBSET:
                 raise MolfileError(f"SMILES element at character {index + 1} is not supported.")
             add_atom(token, 0)
             index += len(token)
@@ -587,7 +612,7 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
     return Molecule(
         name,
         tuple(
-            Atom(atom.element, positions[index], atom.formal_charge, atom.chirality)
+            replace(atom, position=positions[index])
             for index, atom in enumerate(atoms)
         ),
         tuple(bonds),
@@ -631,9 +656,32 @@ def _apply_m_chg(atoms: tuple[Atom, ...], lines: list[str]) -> tuple[Atom, ...]:
                 atom_index = int(values[offset]) - 1
                 formal_charge = int(values[offset + 1])
                 atom = updated[atom_index]
-                updated[atom_index] = Atom(atom.element, atom.position, formal_charge, atom.chirality)
+                updated[atom_index] = replace(atom, formal_charge=formal_charge)
         except (IndexError, ValueError) as exc:
             raise MolfileError("M CHG record is invalid.") from exc
+    return tuple(updated)
+
+
+def _apply_m_iso(atoms: tuple[Atom, ...], lines: list[str]) -> tuple[Atom, ...]:
+    """Apply ``M  ISO`` mass numbers (absolute, not V2000's legacy mass difference)."""
+    updated = list(atoms)
+    for line in lines:
+        if not line.startswith("M  ISO"):
+            continue
+        fields = line.split()
+        try:
+            count = int(fields[2])
+            values = fields[3:]
+            if len(values) != count * 2:
+                raise ValueError
+            for offset in range(0, len(values), 2):
+                atom_index = int(values[offset]) - 1
+                mass = int(values[offset + 1])
+                if atom_index < 0 or mass <= 0:
+                    raise ValueError
+                updated[atom_index] = replace(updated[atom_index], isotope=mass)
+        except (IndexError, ValueError) as exc:
+            raise MolfileError("M ISO record is invalid.") from exc
     return tuple(updated)
 
 
@@ -714,6 +762,7 @@ def _read_v2000_lines(lines: list[str], fallback_name: str) -> Molecule:
         for index in range(bond_count)
     )
     atoms = _apply_m_chg(atoms, lines[expected_lines:])
+    atoms = _apply_m_iso(atoms, lines[expected_lines:])
     return Molecule(name=lines[0].strip() or fallback_name, atoms=atoms, bonds=bonds)
 
 
@@ -779,14 +828,17 @@ def _read_v3000_lines(lines: list[str], fallback_name: str) -> Molecule:
                 element = positional[1]
                 position = (float(positional[2]), float(positional[3]), float(positional[4]))
                 charge = int(properties.get("CHG", "0"))
+                isotope = int(properties["MASS"]) if "MASS" in properties else None
             except (IndexError, ValueError) as exc:
                 raise MolfileError(f"V3000 atom record is invalid: {payload!r}") from exc
+            if isotope is not None and isotope <= 0:
+                raise MolfileError(f"V3000 atom {atom_id} has an invalid MASS={isotope}.")
             if not element or element.startswith("[") or element.upper() in {"L", "NOT"}:
                 raise MolfileError(f"V3000 atom {atom_id} uses an atom list, which is not supported.")
             if atom_id in atom_ids:
                 raise MolfileError(f"V3000 atom index {atom_id} appears twice.")
             atom_ids[atom_id] = len(atoms)
-            atoms.append(Atom(element, position, charge))
+            atoms.append(Atom(element, position, charge, None, isotope))
         elif block == "BOND":
             positional, _properties = _v3000_fields(payload)
             try:
@@ -959,6 +1011,10 @@ def _render_v2000(molecule: Molecule) -> str:
     for offset in range(0, len(charges), 8):
         group = charges[offset:offset + 8]
         lines.append(f"M  CHG{len(group):>3}" + "".join(f"{index:>4}{charge:>4}" for index, charge in group))
+    isotopes = [(index + 1, atom.isotope) for index, atom in enumerate(molecule.atoms) if atom.isotope]
+    for offset in range(0, len(isotopes), 8):
+        group = isotopes[offset:offset + 8]
+        lines.append(f"M  ISO{len(group):>3}" + "".join(f"{index:>4}{mass:>4}" for index, mass in group))
     lines.append("M  END")
     return "\n".join(lines) + "\n"
 
@@ -991,6 +1047,8 @@ def _render_v3000(molecule: Molecule) -> str:
         )
         if atom.formal_charge:
             record += f" CHG={atom.formal_charge}"
+        if atom.isotope:
+            record += f" MASS={atom.isotope}"
         records.append(record)
     records.append("END ATOM")
     if molecule.bonds:

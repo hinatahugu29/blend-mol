@@ -8,7 +8,7 @@ ambiguous atoms are reported rather than silently receiving a generic type.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Callable
 
@@ -334,9 +334,14 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
 
         if atom_type not in UFF_PARAMETERS:
             types.append(None)
-            messages.append(
-                f"UFF: atom {index + 1} ({atom.element}, charge {atom.formal_charge:+d}) is not supported"
-            )
+            if atom.element == "*":
+                messages.append(
+                    f"UFF: atom {index + 1} is a wildcard (*) placeholder; change it to a real element first"
+                )
+            else:
+                messages.append(
+                    f"UFF: atom {index + 1} ({atom.element}, charge {atom.formal_charge:+d}) is not supported"
+                )
         else:
             types.append(atom_type)
     # UFF has separate resonant types. This mirrors the conservative resonance
@@ -1268,7 +1273,7 @@ def _with_positions(molecule: Molecule, positions: list[list[float]]) -> Molecul
     return Molecule(
         molecule.name,
         tuple(
-            Atom(atom.element, tuple(positions[index]), atom.formal_charge, atom.chirality)
+            replace(atom, position=tuple(positions[index]))
             for index, atom in enumerate(molecule.atoms)
         ),
         molecule.bonds,

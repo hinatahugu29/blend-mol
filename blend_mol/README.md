@@ -42,7 +42,13 @@ displayed as a ball-and-stick model.
   starting layout. Tetrahedral `@` / `@@` markers are retained on atoms and
   produce opposite-handed 3D starting arrangements. Directional `/` / `\\`
   markers around double bonds are also retained and produce opposite-side or
-  matching-side starting arrangements.
+  matching-side starting arrangements. `@TH1` / `@TH2` are read as `@` / `@@`;
+  other stereo classes (`@AL`, `@SP`, ...) are named in the error. Bracket
+  atoms may carry an isotope (`[13CH4]`, `[2H]`), which is kept through
+  editing and MOL/SDF export (`M  ISO`, V3000 `MASS=`) and dropped when the
+  element changes; UFF ignores it. Silicon is accepted in brackets
+  (`[SiH4]`, `C[Si](C)(C)C`). A wildcard `*` becomes a grey placeholder atom
+  that UFF refuses until it is changed to a real element.
 - Draws atoms with an element colour and bonds as cylinders.
 - Adds implicit hydrogens for the common neutral valences used by the supplied
   triphenylene example.

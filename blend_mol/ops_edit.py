@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import bpy
 from bpy.props import StringProperty
@@ -298,6 +299,7 @@ class BLENDMOL_OT_change_atom_element(Operator):
         molecule = _deserialize_molecule(root["blend_mol_data"])
         element = context.scene.blend_mol_settings.edit_element
         atoms = list(molecule.atoms)
+        # A mass number belongs to the old element, so the isotope label is dropped.
         atoms[atom_index] = Atom(
             element, atoms[atom_index].position, atoms[atom_index].formal_charge, atoms[atom_index].chirality
         )
@@ -324,7 +326,7 @@ class BLENDMOL_OT_set_formal_charge(Operator):
         charge = context.scene.blend_mol_settings.formal_charge
         atoms = list(molecule.atoms)
         atom = atoms[atom_index]
-        atoms[atom_index] = Atom(atom.element, atom.position, charge, atom.chirality)
+        atoms[atom_index] = replace(atom, formal_charge=charge)
         updated = Molecule(molecule.name, tuple(atoms), molecule.bonds)
         _store_topology_change(root, updated)
         _clear_molecule_display(root, collection)

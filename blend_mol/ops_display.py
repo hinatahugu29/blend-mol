@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+from dataclasses import replace
 
 import bpy
 from bpy.types import Operator
@@ -78,7 +79,7 @@ def _relax_display_geometry(molecule: Molecule, iterations: int, fixed_atoms: se
                 elif movable_b:
                     positions[atom_b] += correction
     atoms = tuple(
-        Atom(atom.element, tuple(positions[index]), atom.formal_charge, atom.chirality)
+        replace(atom, position=tuple(positions[index]))
         for index, atom in enumerate(molecule.atoms)
     )
     return Molecule(molecule.name, atoms, molecule.bonds)
@@ -169,15 +170,10 @@ class BLENDMOL_OT_jitter_atom_positions(Operator):
                 atoms.append(atom)
                 continue
             jittered_count += 1
-            atoms.append(Atom(
-                atom.element,
-                tuple(
-                    coordinate + random.uniform(-magnitude, magnitude)
-                    for coordinate in atom.position
-                ),
-                atom.formal_charge,
-                atom.chirality,
-            ))
+            atoms.append(replace(atom, position=tuple(
+                coordinate + random.uniform(-magnitude, magnitude)
+                for coordinate in atom.position
+            )))
         updated = Molecule(molecule.name, tuple(atoms), molecule.bonds)
         root["blend_mol_data"] = _serialize_molecule(updated)
         _clear_molecule_display(root, collection)
