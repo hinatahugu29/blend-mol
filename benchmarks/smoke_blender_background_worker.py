@@ -81,7 +81,7 @@ try:
     assert addon.BLENDMOL_OT_toggle_live_uff.modal(
         stopped_operator, addon.bpy.context, late_timer
     ) == {"CANCELLED"}
-    molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     root = addon._create_molecule(molecule, addon.bpy.context.scene.blend_mol_settings, "smoke")
     collection = addon._molecule_collection(root)
     atom_object = next(obj for obj in collection.objects

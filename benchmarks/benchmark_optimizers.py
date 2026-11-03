@@ -35,7 +35,7 @@ def distorted(source: Molecule, seed: int, amplitude: float = 0.12) -> Molecule:
 
 
 def benchmark(iterations: int = 100, seeds: range = range(3)) -> dict:
-    source = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    source = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     algorithms = ("STEEPEST", "FIRE2", "LBFGS")
     results = {}
     for algorithm in algorithms:

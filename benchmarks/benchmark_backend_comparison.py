@@ -17,7 +17,7 @@ from native_backend import backend_status, set_backend_preference
 
 
 def benchmark(repeats: int = 3) -> dict:
-    source = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    source = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     molecules = [replicated_molecule(source, copies) for copies in (1, 4, 10)]
     cases = {}
     for backend in ("python", "rust"):

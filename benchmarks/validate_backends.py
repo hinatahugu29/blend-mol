@@ -103,7 +103,7 @@ def repeatability(source: Molecule, repeats: int = 50) -> dict:
 
 
 def validate() -> dict:
-    source = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    source = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     single_step = compare(source, range(10), 1, set())
     multi_step = compare(source, range(5), 20, {0, 7})
     fire2 = compare(source, range(3), 10, {0, 7}, "FIRE2")

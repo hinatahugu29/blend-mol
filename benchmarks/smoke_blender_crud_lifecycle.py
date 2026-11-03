@@ -257,7 +257,7 @@ try:
     # geometry artifact of this test's atom placement, not a target for this
     # smoke test. Exercise the operator on triphenylene instead, which is
     # covered against external UFF references elsewhere in this repository.
-    uff_molecule = addon.read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    uff_molecule = addon.read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     uff_root = addon._create_molecule(uff_molecule, settings, "uff_lifecycle")
     uff_collection = addon._molecule_collection(uff_root)
     _select_only(_atom_object(uff_collection, 0))

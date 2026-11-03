@@ -92,7 +92,7 @@ try:
     draw_all(context, "no selection")
 
     # --- State 2: molecule root selected, no atom/bond -----------------
-    molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     root = addon._create_molecule(molecule, settings, "panel_smoke")
     collection = addon._molecule_collection(root)
     addon.bpy.ops.object.select_all(action="DESELECT")

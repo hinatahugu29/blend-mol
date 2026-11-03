@@ -38,7 +38,7 @@ def measure(molecule, backend: str, repeats: int = 7) -> dict:
 
 
 def benchmark() -> dict:
-    source = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    source = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     cases = []
     for copies in (1, 4, 10):
         molecule = replicated_molecule(source, copies)

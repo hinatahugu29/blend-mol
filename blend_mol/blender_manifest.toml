@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "blend_mol"
-version = "0.1.81"
+version = "0.1.82"
 name = "Blend Mol"
-tagline = "Import and visualize molecular structures"
+tagline = "Build, edit, and UFF-optimize molecules"
 maintainer = "Blend Mol contributors"
 type = "add-on"
 tags = ["Import-Export", "Object"]

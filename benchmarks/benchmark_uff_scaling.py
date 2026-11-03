@@ -96,7 +96,7 @@ def measure(label: str, molecules: list[Molecule], repeats: int) -> dict:
 
 
 def benchmark(repeats=3) -> dict:
-    triphenylene = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    triphenylene = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     return {
         "benchmark": "Blend Mol partial UFF scaling",
         "repeats": repeats,

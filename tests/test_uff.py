@@ -22,7 +22,7 @@ import uff
 
 class TestUffTyping(unittest.TestCase):
     def test_lbfgs_state_continues_across_chunks(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         first = minimize_partial_energy(molecule, 4, 0.01, algorithm="LBFGS")
         second = minimize_partial_energy(
             first.molecule, 4, 0.01, algorithm="LBFGS",
@@ -42,7 +42,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertLess(second.final_energy_kcal_mol, first.initial_energy_kcal_mol)
 
     def test_lbfgs_fixed_atom_cancellation_and_state_reset(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         incompatible = UffOptimizerState(
             "LBFGS", initialized=True, history_s=((1.0,),), history_y=((1.0,),)
         )
@@ -60,7 +60,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertEqual(cancelled.iterations, 0)
 
     def test_fire2_state_continues_across_chunks(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         first = minimize_partial_energy(molecule, 5, 0.01, algorithm="FIRE2")
         second = minimize_partial_energy(
             first.molecule, 5, 0.01, algorithm="FIRE2",
@@ -78,7 +78,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertLess(second.final_energy_kcal_mol, first.initial_energy_kcal_mol)
 
     def test_fire2_keeps_fixed_atom_and_velocity_zero(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         result = minimize_partial_energy(
             molecule, 8, 0.01, {0}, algorithm="FIRE2"
         )
@@ -87,7 +87,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertEqual(result.optimizer_state.velocity[0], (0.0, 0.0, 0.0))
 
     def test_fire2_resets_incompatible_state_and_validates_algorithm(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         incompatible = UffOptimizerState("FIRE2", ((1.0, 2.0, 3.0),), initialized=True)
         result = minimize_partial_energy(
             molecule, 1, 0.01, algorithm="FIRE2", optimizer_state=incompatible
@@ -98,7 +98,7 @@ class TestUffTyping(unittest.TestCase):
             minimize_partial_energy(molecule, 1, 0.01, algorithm="unknown")
 
     def test_fire2_cooperative_cancellation_preserves_state(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         result = minimize_partial_energy(
             molecule, 100, 0.02, algorithm="FIRE2", cancelled=lambda: True
         )
@@ -154,7 +154,7 @@ class TestUffTyping(unittest.TestCase):
 
     def test_gradient_metrics_ignore_fixed_atoms_and_atom_steps_are_capped(self):
         self.assertEqual(_gradient_step_metrics([[3.0, 4.0, 0.0], [100.0, 0.0, 0.0]], {1}), (4.0, 5.0))
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         max_step = 0.01
         result = minimize_partial_energy(molecule, 1, max_step)
         self.assertTrue(result.ready)
@@ -166,7 +166,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertGreater(max(displacements), 0.0)
 
     def test_minimizer_cooperative_cancellation(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         result = minimize_partial_energy(
             molecule, 100, 0.02, cancelled=lambda: True
         )
@@ -179,7 +179,7 @@ class TestUffTyping(unittest.TestCase):
         )
 
     def test_configurable_gradient_tolerance(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         result = minimize_partial_energy(molecule, 20, 0.02, gradient_tolerance=1e20)
         self.assertTrue(result.ready)
         self.assertEqual(result.iterations, 0)
@@ -188,7 +188,7 @@ class TestUffTyping(unittest.TestCase):
             minimize_partial_energy(molecule, 1, 0.02, gradient_tolerance=0.0)
 
     def test_configurable_energy_tolerance(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         result = minimize_partial_energy(molecule, 20, 0.02, energy_tolerance=1e20)
         self.assertTrue(result.ready)
         # A huge tolerance makes every step trivially satisfy it, but a single
@@ -200,7 +200,7 @@ class TestUffTyping(unittest.TestCase):
             minimize_partial_energy(molecule, 1, 0.02, energy_tolerance=0.0)
 
     def test_prepared_context_reuses_typing_and_rejects_other_topology(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         original = uff.type_molecule
         with mock.patch.object(uff, "type_molecule", wraps=original) as typing:
             prepared = uff.prepare_uff_context(molecule)
@@ -219,7 +219,7 @@ class TestUffTyping(unittest.TestCase):
             minimize_partial_energy(changed, 1, 0.01, prepared=prepared)
 
     def test_prepared_topology_tables_match_uncached_evaluation(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         prepared = uff.prepare_uff_context(molecule)
         self.assertEqual(len(prepared.neighbors), len(molecule.atoms))
         self.assertTrue(prepared.vdw_pairs)
@@ -255,7 +255,7 @@ class TestUffTyping(unittest.TestCase):
                     self.assertAlmostEqual(uncached_component, cached_component, places=10)
 
     def test_objective_boundary_matches_energy_and_projects_fixed_atoms(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         prepared = uff.prepare_uff_context(molecule)
         constraint = ((0, 1, 1.7, 25.0),)
         constraint_energy, _constraint_gradient = _distance_constraint_energy_gradient(
@@ -303,7 +303,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertGreater(energy, 0.0)
         self.assertAlmostEqual(gradient[3][2], (higher - lower) / (2.0 * step), places=4)
 
-        triphenylene = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        triphenylene = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         path = (0, 1, 2, 3)
         initial = _dihedral_angle(*(triphenylene.atoms[index].position for index in path))
         target = _wrapped_angle_difference(initial + math.radians(12.0), 0.0)
@@ -340,7 +340,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertGreater(energy, 0.0)
         self.assertAlmostEqual(gradient[0][1], (higher - lower) / (2.0 * step), places=5)
 
-        triphenylene = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        triphenylene = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         first, center, second = 0, 1, 2
         initial_vectors = (
             tuple(triphenylene.atoms[first].position[i] - triphenylene.atoms[center].position[i] for i in range(3)),
@@ -377,7 +377,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertAlmostEqual(gradient[0][0], -50.0)
         self.assertAlmostEqual(gradient[1][0], 50.0)
 
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         first, second = 0, 10
         initial_distance = math.dist(
             molecule.atoms[first].position, molecule.atoms[second].position
@@ -394,7 +394,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertLess(abs(final_distance - target), abs(initial_distance - target))
 
     def test_triphenylene_energy_matches_openbabel_uff_reference(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         conversion = 4.184
         # Open Babel 3 / Avogadro 2.0.0 reference values, in kJ/mol.
         reference = {
@@ -453,7 +453,7 @@ class TestUffTyping(unittest.TestCase):
             )
 
     def test_auto_falls_back_and_forced_rust_reports_missing_dll(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         saved_library = native_backend._LIBRARY
         saved_error = native_backend._LOAD_ERROR
         try:
@@ -474,7 +474,7 @@ class TestUffTyping(unittest.TestCase):
             set_backend_preference("auto")
 
     def test_rust_and_python_vdw_gradients_match(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         set_backend_preference("python")
         python_energy, python_gradient, python_messages = _bond_vdw_energy_gradient(molecule)
         set_backend_preference("rust")
@@ -491,7 +491,7 @@ class TestUffTyping(unittest.TestCase):
                 self.assertAlmostEqual(python_value, rust_value, places=8)
 
     def test_rust_and_python_one_step_minimization_match(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         set_backend_preference("python")
         python_result = minimize_partial_energy(molecule, 1, 0.02)
         set_backend_preference("rust")
@@ -515,7 +515,7 @@ class TestUffTyping(unittest.TestCase):
                 self.assertAlmostEqual(python_value, rust_value, places=8)
 
     def test_analytic_angle_gradient_matches_finite_difference(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         energy, gradient, messages = _angle_energy_gradient(molecule)
         step = 1e-5
         atoms = list(molecule.atoms)
@@ -536,7 +536,7 @@ class TestUffTyping(unittest.TestCase):
         )
 
     def test_analytic_bond_and_vdw_gradient_matches_finite_difference(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
         energy, gradient, messages = _bond_vdw_energy_gradient(molecule)
         expected_energy = (
             bond_stretch_energy(molecule).energy_kcal_mol
@@ -840,7 +840,7 @@ class TestUffTyping(unittest.TestCase):
                 )
 
     def test_types_triphenylene_without_external_dependencies(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
 
         report = type_molecule(molecule)
 
@@ -878,7 +878,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertIn(minimized.termination, {"gradient tolerance", "line search stalled", "iteration limit"})
 
     def test_requires_explicit_hydrogens_for_bond_stretch_energy(self):
-        molecule = read_v2000(ROOT / "217-59-4(トリフェニレン).mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン).mol")
 
         energy = bond_stretch_energy(molecule)
 
@@ -902,7 +902,7 @@ class TestUffTyping(unittest.TestCase):
         self.assertIsNone(total.energy_kcal_mol)
 
     def test_reports_an_element_outside_the_first_supported_subset(self):
-        molecule = read_v2000(ROOT / "131159-39-2(フラーレン).mol")
+        molecule = read_v2000(ROOT / "tests" / "fixtures" / "131159-39-2(フラーレン).mol")
 
         report = type_molecule(molecule)
 

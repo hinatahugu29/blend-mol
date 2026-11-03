@@ -191,6 +191,8 @@ UFF は Blend Mol 内へ実装し、Open Babel の導入を必須にしない。
   見つかったのは「外部回帰行列にハロゲン化分子が一つも無かった」ことが
   一因だったため、同種の再発を防ぐ目的で追加。
 - [x] CI整備: GitHub Actionsワークフロー（`.github/workflows/ci.yml`）を追加。
+  （注: その後、依存なしユニットテストも windows-latest へ変更済み。Rust 一致テストが
+  Windows 用 DLL を読み込むため。）
   ubuntu-latestで依存なしユニットテスト、windows-latestで本物のBlender
   （blender.orgから5.2.2を都度ダウンロード、`actions/cache`でキャッシュ）を
   使い、リリースZIPのビルド・4本のヘッドレススモークテスト・ネイティブDLL

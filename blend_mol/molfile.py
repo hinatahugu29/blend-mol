@@ -7,6 +7,11 @@ from pathlib import Path
 import math
 import re
 
+try:
+    from .elements import MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, charged_typical_valence
+except ImportError:  # Enables the small module to be tested outside Blender.
+    from elements import MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE, charged_typical_valence
+
 
 @dataclass(frozen=True)
 class Atom:
@@ -31,9 +36,6 @@ class Molecule:
     bonds: tuple[Bond, ...]
 
 
-TYPICAL_VALENCE = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
-
-
 def _target_valence(atom: Atom) -> int | None:
     """Typical, neutral-state valence used for implicit hydrogen counts.
 
@@ -45,18 +47,7 @@ def _target_valence(atom: Atom) -> int | None:
     already clamped to zero, never negative). Use _max_legitimate_valence
     for anything that reports or rejects an apparent valence violation.
     """
-    if atom.element == "N" and atom.formal_charge > 0:
-        return 4
-    if atom.element == "O" and atom.formal_charge < 0:
-        return 1
-    return TYPICAL_VALENCE.get(atom.element)
-
-
-# Highest bond-order sum sulfur/phosphorus can legitimately reach in common
-# neutral hypervalent groups (sulfoxide/sulfone/sulfonamide for S=4/6;
-# phosphate/phosphonate/phosphine oxide for P=5), via expanded-octet bonding
-# that _target_valence's typical/neutral value does not represent.
-_HYPERVALENT_CEILING = {"S": 6, "P": 5}
+    return charged_typical_valence(atom.element, atom.formal_charge)
 
 
 def _max_legitimate_valence(atom: Atom) -> int | None:
@@ -66,17 +57,19 @@ def _max_legitimate_valence(atom: Atom) -> int | None:
     it allows common hypervalent oxidation states instead of flagging them
     as errors.
     """
+    # elements.MAX_VALENCE holds the hypervalent ceilings (sulfoxide/sulfone/
+    # sulfonamide S up to 6; phosphate/phosphonate/phosphine oxide P up to 5).
     typical = _target_valence(atom)
     if typical is None:
         return None
-    return max(typical, _HYPERVALENT_CEILING.get(atom.element, typical))
+    return max(typical, MAX_VALENCE.get(atom.element, typical))
 
 
 class MolfileError(ValueError):
     """Raised when a file is not a supported V2000 Molfile."""
 
 
-_SMILES_ELEMENTS = {"B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"}
+_SMILES_ELEMENTS = SMILES_ELEMENTS
 _SMILES_AROMATIC = {"b": "B", "c": "C", "n": "N", "o": "O", "p": "P", "s": "S"}
 
 

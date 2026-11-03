@@ -203,7 +203,7 @@ Viewport sidebar.
 
 ## Test data
 
-`217-59-4(トリフェニレン).mol` is the first import test case. It is a 2D V2000
+`tests/fixtures/217-59-4(トリフェニレン).mol` is the first import test case. It is a 2D V2000
 Molfile containing 18 carbon atoms and 21 bonds; Blend Mol displays 12 implicit
 hydrogens from its bond orders.
 

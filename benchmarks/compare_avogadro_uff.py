@@ -28,7 +28,7 @@ from uff import (
 
 
 AVOGADRO_BIN = Path(r"C:\Program Files\Avogadro2\bin")
-INPUT = ROOT / "217-59-4(トリフェニレン)2.mol"
+INPUT = ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol"
 KCAL_TO_KJ = 4.184
 
 

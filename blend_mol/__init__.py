@@ -1,4 +1,4 @@
-"""Blend Mol: an initial V2000 MOL importer and molecular display tool."""
+"""Blend Mol: molecular editing, visualization, and UFF optimization for Blender."""
 
 from __future__ import annotations
 
@@ -25,8 +25,12 @@ from bpy.props import (
 from bpy.types import Operator, Panel, PropertyGroup
 from mathutils import Matrix, Vector
 
+from .elements import (
+    COVALENT_RADII, ELEMENT_COLORS, ELEMENT_RADII, ELEMENT_SYMBOLS, UNKNOWN_COLOR,
+    UNKNOWN_COVALENT_RADIUS, UNKNOWN_DISPLAY_RADIUS,
+)
 from .molfile import (
-    Atom, Bond, Molecule, MolfileError, TYPICAL_VALENCE, _max_legitimate_valence, _target_valence,
+    Atom, Bond, Molecule, MolfileError, _max_legitimate_valence, _target_valence,
     read_pdb, read_sdf, read_smiles, read_v2000, read_xyz,
     write_pdb, write_sdf, write_v2000, write_xyz,
 )
@@ -40,22 +44,7 @@ from .native_backend import backend_status, set_backend_preference
 from .live_worker import LatestOnlyWorker, adapt_chunk_iterations, should_continue_relaxation
 
 
-ELEMENT_COLORS = {
-    "H": (0.92, 0.92, 0.92, 1.0),
-    "C": (0.18, 0.18, 0.18, 1.0),
-    "N": (0.12, 0.26, 0.80, 1.0),
-    "O": (0.82, 0.08, 0.08, 1.0),
-    "P": (1.00, 0.50, 0.00, 1.0),
-    "S": (0.92, 0.78, 0.05, 1.0),
-    "F": (0.15, 0.75, 0.20, 1.0),
-    "Cl": (0.10, 0.60, 0.15, 1.0),
-    "Br": (0.45, 0.12, 0.05, 1.0),
-    "I": (0.36, 0.08, 0.62, 1.0),
-}
-ELEMENT_RADII = {"H": 0.22, "C": 0.34, "N": 0.33, "O": 0.31, "P": 0.38, "S": 0.38}
-COVALENT_RADII = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66, "P": 1.07, "S": 1.05,
-                   "F": 0.57, "Cl": 1.02, "Br": 1.20, "I": 1.39}
-ELEMENT_ITEMS = tuple((element, element, "") for element in ELEMENT_COLORS)
+ELEMENT_ITEMS = tuple((element, element, "") for element in ELEMENT_SYMBOLS)
 
 
 def _update_element_color(item, _context) -> None:
@@ -91,7 +80,7 @@ class BlendMolElementColor(PropertyGroup):
         size=4,
         min=0.0,
         max=1.0,
-        default=(0.65, 0.25, 0.65, 1.0),
+        default=UNKNOWN_COLOR,
         update=_update_element_color,
     )
 
@@ -203,7 +192,7 @@ def _palette_item(settings: BlendMolSettings, element: str) -> BlendMolElementCo
             return item
     item = settings.element_colors.add()
     item.element = element
-    item.color = ELEMENT_COLORS.get(element, (0.65, 0.25, 0.65, 1.0))
+    item.color = ELEMENT_COLORS.get(element, UNKNOWN_COLOR)
     return item
 
 
@@ -686,7 +675,7 @@ def _bond_edit_valence_error(original: Molecule, updated: Molecule, indices) -> 
 
 
 def _covalent_radius(element: str) -> float:
-    return COVALENT_RADII.get(element, 0.8)
+    return COVALENT_RADII.get(element, UNKNOWN_COVALENT_RADIUS)
 
 
 def _target_bond_length(atom_a: Atom, atom_b: Atom, order: int) -> float:
@@ -858,7 +847,7 @@ def _render_molecule(
         color = _element_color(settings, atom.element)
         _sphere(
             f"{atom.element}_{index + 1:03d}", Vector(atom.position),
-            ELEMENT_RADII.get(atom.element, 0.34) * settings.atom_scale,
+            ELEMENT_RADII.get(atom.element, UNKNOWN_DISPLAY_RADIUS) * settings.atom_scale,
             color, atom_material, collection, atom.element, settings.atom_segments, settings.atom_rings,
             atom_index=index, chirality=atom.chirality,
         )
@@ -2808,9 +2797,7 @@ class BLENDMOL_OT_reset_element_colors(Operator):
         settings = context.scene.blend_mol_settings
         elements = _managed_atom_elements()
         for element in elements:
-            _palette_item(settings, element).color = ELEMENT_COLORS.get(
-                element, (0.65, 0.25, 0.65, 1.0)
-            )
+            _palette_item(settings, element).color = ELEMENT_COLORS.get(element, UNKNOWN_COLOR)
         self.report({"INFO"}, f"Reset colors for {sum(elements.values())} atoms")
         return {"FINISHED"}
 

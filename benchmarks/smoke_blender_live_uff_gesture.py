@@ -62,7 +62,7 @@ def trigger_real_auto_start(atom_object) -> None:
 
 addon.register()
 try:
-    molecule = read_v2000(ROOT / "217-59-4(トリフェニレン)2.mol")
+    molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
     settings = addon.bpy.context.scene.blend_mol_settings
     root = addon._create_molecule(molecule, settings, "gesture_smoke")
     collection = addon._molecule_collection(root)

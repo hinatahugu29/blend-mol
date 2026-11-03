@@ -23,12 +23,14 @@ _KJ_TO_KCAL = 1.0 / 4.184
 _ENERGY_TOLERANCE_STREAK = 3
 
 try:
+    from .elements import charged_typical_valence
     from .molfile import Atom, Molecule
     from .native_backend import (
         residual_energy_gradient as _native_residual_energy_gradient,
         vdw_energy_gradient as _native_vdw_energy_gradient,
     )
 except ImportError:  # Enables the small module to be tested outside Blender.
+    from elements import charged_typical_valence
     from molfile import Atom, Molecule
     from native_backend import (
         residual_energy_gradient as _native_residual_energy_gradient,
@@ -355,7 +357,6 @@ def type_molecule(molecule: Molecule) -> UffTypingReport:
 def _implicit_hydrogen_count(molecule: Molecule) -> int:
     """Return virtual hydrogens that would make a bond-only UFF energy partial."""
 
-    valences = {"H": 1, "C": 4, "N": 3, "O": 2, "P": 3, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
     bond_sums = [0] * len(molecule.atoms)
     for bond in molecule.bonds:
         if 0 <= bond.atom_a < len(molecule.atoms) and 0 <= bond.atom_b < len(molecule.atoms):
@@ -363,11 +364,7 @@ def _implicit_hydrogen_count(molecule: Molecule) -> int:
             bond_sums[bond.atom_b] += bond.order
     count = 0
     for index, atom in enumerate(molecule.atoms):
-        target = valences.get(atom.element, 0)
-        if atom.element == "N" and atom.formal_charge > 0:
-            target = 4
-        if atom.element == "O" and atom.formal_charge < 0:
-            target = 1
+        target = charged_typical_valence(atom.element, atom.formal_charge) or 0
         count += max(0, target - bond_sums[index])
     return count
 

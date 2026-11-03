@@ -27,6 +27,7 @@ MANIFEST = SOURCE / "blender_manifest.toml"
 FILES = (
     "blender_manifest.toml",
     "__init__.py",
+    "elements.py",
     "live_worker.py",
     "molfile.py",
     "native_backend.py",
@@ -48,6 +49,13 @@ def build(destination: Path | None = None) -> Path:
     version = _read_version()
     if destination is None:
         destination = ROOT / "dist" / f"blend_mol-{version}.zip"
+    unlisted = sorted(
+        path.name for path in SOURCE.glob("*.py") if path.name not in FILES
+    )
+    if unlisted:
+        # A module missing from FILES would install fine here but fail to
+        # import from the release zip.
+        raise RuntimeError(f"Add-on modules missing from FILES: {unlisted}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         destination.unlink()
