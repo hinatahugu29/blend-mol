@@ -38,11 +38,14 @@ displayed as a ball-and-stick model.
 - Creates a basic organic molecule directly from SMILES, including common
   elements, formal charges, branches, ring closures, and single/double/triple
   bonds, plus common aromatic notation such as `c1ccccc1`. Aromatic bonds are
-  converted to editable alternating single/double bonds. It supplies a 2D
-  starting layout. Tetrahedral `@` / `@@` markers are retained on atoms and
-  produce opposite-handed 3D starting arrangements. Directional `/` / `\\`
-  markers around double bonds are also retained and produce opposite-side or
-  matching-side starting arrangements. `@TH1` / `@TH2` are read as `@` / `@@`;
+  converted to editable alternating single/double bonds. The starting
+  geometry is a 3D distance-geometry embedding (`embed.py`): bond lengths from
+  covalent radii, angles from hybridisation and ring size, planar aromatic
+  rings, saturated six-membered rings as chairs with substituents preferring
+  equatorial, and the tetrahedral `@` / `@@` and double-bond `/` / `\\`
+  stereo read from the written neighbour order (checked against Open Babel).
+  The older flat 2D layout is still available by turning off 3D Starting
+  Geometry. `@TH1` / `@TH2` are read as `@` / `@@`;
   other stereo classes (`@AL`, `@SP`, ...) are named in the error. Bracket
   atoms may carry an isotope (`[13CH4]`, `[2H]`), which is kept through
   editing and MOL/SDF export (`M  ISO`, V3000 `MASS=`) and dropped when the
@@ -205,8 +208,9 @@ displayed as a ball-and-stick model.
   the 500-step optimized structures differ by about 0.000241 Å RMS across
   all pairwise distances.
   Electrostatic terms and a complete UFF optimizer are still pending.
-- Keeps two-dimensional MOL coordinates planar. Three-dimensional structure
-  generation is deliberately not part of this first prototype.
+- Keeps two-dimensional MOL coordinates planar; only SMILES input gets a
+  generated 3D structure. The embedding is a starting point, not a conformer
+  search: run Minimize Partial UFF afterwards.
 
 ## Install in Blender 5.2
 

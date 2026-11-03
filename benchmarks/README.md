@@ -175,6 +175,22 @@ with the same connectivity and per-atom bond-order totals:
 python benchmarks\compare_openbabel_file_io.py
 ```
 
+SMILES starting geometries are evaluated on 17 molecules (clashes, bond
+lengths, time, and stereo as perceived by Open Babel from the 3D
+coordinates):
+
+```powershell
+python benchmarks\evaluate_smiles_embedding.py
+```
+
+and, inside Blender (hydrogen placement needs mathutils), the 2D layout and
+the 3D embedding are compared by partial UFF energy before and after the same
+minimization:
+
+```powershell
+blender --background --factory-startup --python benchmarks\compare_smiles_layout_uff.py
+```
+
 Imidazole is reported as a NOTE, not a failure: from an aromatic MOL with
 implicit hydrogens, Blend Mol puts the NH on the other ring nitrogen than
 Open Babel does, and both tautomers are valid.

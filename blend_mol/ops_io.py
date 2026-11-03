@@ -209,15 +209,28 @@ class BLENDMOL_OT_import_sdf(Operator):
 class BLENDMOL_OT_import_smiles(Operator):
     bl_idname = "blendmol.import_smiles"
     bl_label = "Create from SMILES"
-    bl_description = "Create a molecule from basic organic SMILES; it receives a 2D starting layout"
+    bl_description = (
+        "Create a molecule from basic organic SMILES, with a 3D starting geometry that honours "
+        "its @/@@ and / \ stereo marks"
+    )
     bl_options = {"REGISTER", "UNDO"}
 
     smiles: StringProperty(name="SMILES", default="CC")
     molecule_name: StringProperty(name="Molecule Name", default="SMILES molecule")
+    embed_3d: BoolProperty(
+        name="3D Starting Geometry",
+        description=(
+            "Build a 3D distance-geometry structure (chairs, planar rings, stereo); "
+            "off uses the older flat 2D layout"
+        ),
+        default=True,
+    )
 
     def execute(self, context):
         try:
-            molecule = read_smiles(self.smiles, self.molecule_name.strip() or "SMILES molecule")
+            molecule = read_smiles(
+                self.smiles, self.molecule_name.strip() or "SMILES molecule", embed_3d=self.embed_3d,
+            )
         except MolfileError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}

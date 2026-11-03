@@ -8,11 +8,13 @@ import math
 import re
 
 try:
+    from .embed import IMPLICIT, DoubleBondStereo, Tetrahedral, embed
     from .elements import (
         COVALENT_RADII, DUMMY_SYMBOL, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE,
         UNKNOWN_COVALENT_RADIUS, charged_typical_valence,
     )
 except ImportError:  # Enables the small module to be tested outside Blender.
+    from embed import IMPLICIT, DoubleBondStereo, Tetrahedral, embed
     from elements import (
         COVALENT_RADII, DUMMY_SYMBOL, MAX_VALENCE, SMILES_ELEMENTS, TYPICAL_VALENCE,
         UNKNOWN_COVALENT_RADIUS, charged_typical_valence,
@@ -440,7 +442,59 @@ def _kekulize(
     return sorted(required - double_atoms)
 
 
-def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
+def _double_bond_stereo(bonds: list[Bond]) -> list[DoubleBondStereo]:
+    """Cis/trans relations from SMILES ``/`` ``\\`` marks around each double bond.
+
+    A mark reads left to right in the string, and every Bond here has the
+    earlier-written atom as ``atom_a``. A substituent written before its
+    double-bond atom is "below" for ``/``; one written after is "above".
+    Two marked substituents on the same side are cis.
+    """
+    relations = []
+    for double in bonds:
+        if double.order != 2:
+            continue
+        sides = []
+        for end in (double.atom_a, double.atom_b):
+            marked = next(
+                (bond for bond in bonds if bond is not double and bond.stereo in ("/", "\\")
+                 and end in (bond.atom_a, bond.atom_b)
+                 and {bond.atom_a, bond.atom_b} != {double.atom_a, double.atom_b}),
+                None,
+            )
+            if marked is None:
+                break
+            substituent = marked.atom_a if marked.atom_b == end else marked.atom_b
+            written_before = marked.atom_b == end
+            up = (marked.stereo == "/") != written_before
+            sides.append((substituent, up))
+        if len(sides) == 2:
+            relations.append(DoubleBondStereo(
+                double.atom_a, double.atom_b, sides[0][0], sides[1][0], sides[0][1] == sides[1][1],
+            ))
+    return relations
+
+
+def _embed_smiles(atoms, bonds, neighbor_order, has_previous) -> list[tuple[float, float, float]]:
+    tetrahedral = []
+    for index, atom in enumerate(atoms):
+        if atom.chirality not in ("@", "@@"):
+            continue
+        order = list(neighbor_order[index])
+        if len(order) == 3 and IMPLICIT not in order:
+            # A lone pair (e.g. sulfoxide S) sits where an implicit H would.
+            order.insert(1 if has_previous[index] else 0, IMPLICIT)
+        if len(order) == 4:
+            tetrahedral.append(Tetrahedral(index, tuple(order), atom.chirality == "@@"))
+    return embed(
+        [atom.element for atom in atoms],
+        [(bond.atom_a, bond.atom_b, bond.order) for bond in bonds],
+        tetrahedral,
+        _double_bond_stereo(bonds),
+    )
+
+
+def read_smiles(smiles: str, name: str = "SMILES", embed_3d: bool = True) -> Molecule:
     """Read a small, dependency-free organic SMILES subset into an editable graph.
 
     The reader supports common organic atoms, bracket formal charges, branches,
@@ -448,6 +502,10 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
     common aromatic atom notation. Aromatic bonds are converted to an editable
     alternating single/double representation. Tetrahedral and directional
     double-bond stereochemistry are retained in the editable graph and layout.
+
+    With ``embed_3d`` (the default) the starting geometry is a 3D distance-
+    geometry embedding (embed.py) that honours ``@``/``@@`` and ``/``/``\\``
+    from the written neighbour order; otherwise the older planar layout is used.
     """
     text = smiles.strip()
     if not text:
@@ -464,6 +522,10 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
     pending_aromatic = False
     pending_stereo: str | None = None
     index = 0
+    # Neighbours of each atom in SMILES order (ring closures at their digit,
+    # IMPLICIT for an implicit H), which is what @ / @@ refer to.
+    neighbor_order: list[list] = []
+    has_previous: list[bool] = []
 
     def reset_pending_bond() -> None:
         nonlocal pending_order, pending_explicit, pending_aromatic, pending_stereo
@@ -480,7 +542,11 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
         atom_index = len(atoms)
         atoms.append(Atom(element, (0.0, 0.0, 0.0), charge, chirality, isotope))
         aromatic_atoms.append(aromatic)
+        neighbor_order.append([])
+        has_previous.append(current is not None)
         if current is not None:
+            neighbor_order[current].append(atom_index)
+            neighbor_order[atom_index].append(current)
             bonds.append(Bond(current, atom_index, pending_order, pending_stereo))
             if pending_aromatic or (aromatic_atoms[current] and aromatic and not pending_explicit):
                 aromatic_bond_indices.append(len(bonds) - 1)
@@ -530,6 +596,9 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
                 order = pending_order if pending_explicit else opening_order
                 stereo = pending_stereo if pending_explicit else opening_stereo
                 bonds.append(Bond(other, current, order, stereo))
+                placeholder = neighbor_order[other].index(("ring", label))
+                neighbor_order[other][placeholder] = current
+                neighbor_order[current].append(other)
                 if pending_aromatic or opening_aromatic or (
                     not pending_explicit and not opening_explicit
                     and aromatic_atoms[other] and aromatic_atoms[current]
@@ -537,6 +606,7 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
                     aromatic_bond_indices.append(len(bonds) - 1)
             else:
                 rings[label] = (current, pending_order, pending_explicit, pending_aromatic, pending_stereo)
+                neighbor_order[current].append(("ring", label))
             reset_pending_bond()
         elif character == "[":
             closing = text.find("]", index + 1)
@@ -570,6 +640,8 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
                 digits = charge_text[1:]
             charge = sign * int(digits or "1") if charge_text else 0
             add_atom(element, charge, aromatic, chirality, isotope)
+            if not aromatic and match.group("hydrogens") and int(match.group("hcount") or "1") >= 1:
+                neighbor_order[current].append(IMPLICIT)
             if aromatic and match.group("hydrogens"):
                 # Aromatic atoms need their H explicit so Kekulization sees
                 # the filled valence (pyrrole [nH], pyridinium [nH+], [nH2+]).
@@ -579,6 +651,9 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
                     atoms.append(Atom("H", (0.0, 0.0, 0.0)))
                     aromatic_atoms.append(False)
                     bonds.append(Bond(parent, len(atoms) - 1, 1))
+                    neighbor_order[parent].append(len(atoms) - 1)
+                    neighbor_order.append([parent])
+                    has_previous.append(True)
             index = closing + 1
         elif character == "*":
             add_atom(DUMMY_SYMBOL, 0)
@@ -608,7 +683,10 @@ def read_smiles(smiles: str, name: str = "SMILES") -> Molecule:
     # with free valence must take a double bond; if no full pattern exists the
     # best partial one is kept (the unmatched atoms get an implicit H).
     _kekulize(atoms, bonds, aromatic_bond_indices)
-    positions = _smiles_layout(len(atoms), bonds, [atom.chirality for atom in atoms])
+    if embed_3d:
+        positions = _embed_smiles(atoms, bonds, neighbor_order, has_previous)
+    else:
+        positions = _smiles_layout(len(atoms), bonds, [atom.chirality for atom in atoms])
     return Molecule(
         name,
         tuple(

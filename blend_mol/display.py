@@ -206,6 +206,27 @@ def _implicit_hydrogens(molecule: Molecule) -> list[tuple[int, Vector]]:
                  + second_axis * (radial * math.sin(2 * math.pi * index / count))).normalized()
                 for index in range(count)
             )
+        elif count == 2 and len(neighbors[atom_index]) == 2:
+            # sp3 CH2 (or NH2+ etc.): both hydrogens in the plane perpendicular
+            # to the X-C-X plane, each half the tetrahedral H-C-H angle from
+            # the outward bisector. Rotating `direction` about the global Z
+            # axis (the general branch below) only made sense for a flat 2D
+            # layout; in 3D it put the second hydrogen in an arbitrary spot.
+            first, second = (
+                (Vector(molecule.atoms[n].position) - origin) for n in neighbors[atom_index]
+            )
+            normal = first.cross(second)
+            if normal.length < 1e-6:
+                reference = Vector((0.0, 0.0, 1.0))
+                if abs(direction.dot(reference)) > 0.9:
+                    reference = Vector((0.0, 1.0, 0.0))
+                normal = direction.cross(reference)
+            normal.normalize()
+            half = math.radians(109.47) / 2.0
+            directions = (
+                (direction * math.cos(half) + normal * math.sin(half)).normalized(),
+                (direction * math.cos(half) - normal * math.sin(half)).normalized(),
+            )
         else:
             directions = tuple(
                 Matrix.Rotation(2 * math.pi * index / count, 4, "Z") @ direction

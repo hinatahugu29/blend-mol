@@ -29,6 +29,7 @@ FILES = (
     "__init__.py",
     "display.py",
     "elements.py",
+    "embed.py",
     "live_uff.py",
     "live_worker.py",
     "molfile.py",
