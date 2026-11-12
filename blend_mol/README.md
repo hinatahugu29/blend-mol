@@ -3,6 +3,28 @@
 Blender 5.2+ extension for building, editing and UFF-optimizing molecules,
 displayed as a ball-and-stick model.
 
+## Basic workflow (0.1.89)
+
+1. Open **Import** to load a file or create a molecule from SMILES, or use
+   **Atoms & Molecules > New Blend Mol Molecule**.
+2. Choose **Element** and add atoms at the 3D cursor. In **Bonds**, choose
+   **Bond Order**, select two atoms and use **Create / Change Bond**.
+3. If **Make Hydrogens Explicit** is red, click it before dragging atoms
+   with automatic UFF. The button becomes a disabled checkmark when complete.
+4. **Auto UFF When Moving Atoms** is on by default for new scene settings.
+   Move an explicit atom to relax its surroundings. Saved scenes keep their
+   existing setting. **Start Live UFF** and **Minimize UFF** also prepare
+   remaining hydrogens automatically when started manually.
+5. Open **Display** for appearance changes and **Export** to save molecules.
+
+Atom charge and coordinate synchronization are under **Atom Details &
+Coordinates**. Solver controls, energy breakdown, timing and history are
+under **UFF Settings & Diagnostics**; fixed atoms and restraints are under
+**UFF Constraints**. Both UFF sections start closed. Mesh detail and
+coordinate snapshots/recovery are closed subsections of **Display**.
+Colours and materials apply immediately across Blend Mol objects; geometry
+settings need **Rebuild Selected Molecule** to affect an existing molecule.
+
 ## Current scope
 
 - Imports atom coordinates, single/double/triple bonds, and formal charges

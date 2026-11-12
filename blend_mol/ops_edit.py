@@ -251,8 +251,8 @@ def _ensure_hydrogens_explicit_for_uff(root: bpy.types.Object, collection: bpy.t
 
 class BLENDMOL_OT_make_hydrogens_explicit(Operator):
     bl_idname = "blendmol.make_hydrogens_explicit"
-    bl_label = "Make Implicit Hydrogens Explicit"
-    bl_description = "Convert displayed implicit hydrogens into editable atoms and bonds"
+    bl_label = "Make Hydrogens Explicit"
+    bl_description = "Prepare automatic Live UFF by converting implicit hydrogens into editable atoms and bonds"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):

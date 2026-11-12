@@ -40,6 +40,8 @@ from .ops_uff import (
     BLENDMOL_OT_relax_around_selected_atom, BLENDMOL_OT_restore_uff_coordinates,
 )
 from .panels import (
+    BLENDMOL_PT_atom_details, BLENDMOL_PT_bonds, BLENDMOL_PT_export, BLENDMOL_PT_mesh,
+    BLENDMOL_PT_uff_details,
     BLENDMOL_PT_constraints, BLENDMOL_PT_display, BLENDMOL_PT_edit, BLENDMOL_PT_file_io,
     BLENDMOL_PT_panel, BLENDMOL_PT_relax, BLENDMOL_PT_uff,
 )
@@ -91,10 +93,15 @@ CLASSES = (
     BLENDMOL_PT_panel,
     BLENDMOL_PT_file_io,
     BLENDMOL_PT_edit,
-    BLENDMOL_PT_constraints,
+    BLENDMOL_PT_atom_details,
+    BLENDMOL_PT_bonds,
     BLENDMOL_PT_uff,
-    BLENDMOL_PT_relax,
+    BLENDMOL_PT_uff_details,
+    BLENDMOL_PT_constraints,
     BLENDMOL_PT_display,
+    BLENDMOL_PT_mesh,
+    BLENDMOL_PT_relax,
+    BLENDMOL_PT_export,
 )
 
 

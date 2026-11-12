@@ -95,7 +95,7 @@ class BlendMolSettings(PropertyGroup):
     uff_live_interval: FloatProperty(name="Live Update Interval", default=0.08, min=0.03, max=1.0)
     uff_live_auto_start: BoolProperty(
         name="Start Live UFF When Moving an Atom",
-        default=False,
+        default=True,
         description="Automatically relax surrounding atoms after moving one explicit atom; stops after settling",
     )
     uff_live_settle_updates: IntProperty(

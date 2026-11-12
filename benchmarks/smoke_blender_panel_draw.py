@@ -5,8 +5,7 @@ cannot be constructed the way an interactive redraw provides it. This
 substitutes a minimal fake layout implementing the small subset of the
 UILayout API the panels actually call (label, operator, prop, box, row,
 separator, the `alert` attribute), so draw() runs for real and any
-AttributeError/TypeError from the 2026-10 panel restructuring (splitting
-one flat panel into BLENDMOL_PT_file_io/edit/constraints/uff/relax/display)
+AttributeError/TypeError from the 2026-10 panel restructuring (rearranging the workflow panels)
 surfaces immediately, across a range of selection states that exercise most
 conditional branches. It does not check visual layout, only that draw()
 completes without raising.
@@ -64,16 +63,35 @@ class FakePanel:
         self._cls.draw(self, context)
 
 
+class PreparationLayout(FakeLayout):
+    """Record the actionable hydrogen button, including its visual state."""
+    def __init__(self, events):
+        super().__init__()
+        self.events = events
+        self.enabled = True
+
+    def operator(self, idname, text=None, icon="NONE"):
+        self.events.append((idname, text, self.enabled, self.alert))
+        return super().operator(idname, text, icon)
+
+    def row(self, align=False):
+        return PreparationLayout(self.events)
+
+    def column(self, align=False):
+        return PreparationLayout(self.events)
+
+
+def assert_preparation(context, enabled, alert):
+    events = []
+    panel = FakePanel(addon.BLENDMOL_PT_edit)
+    panel.layout = PreparationLayout(events)
+    panel.draw(context)
+    button = next(event for event in events if event[0] == "blendmol.make_hydrogens_explicit")
+    assert button[2:] == (enabled, alert), button
+
+
 def draw_all(context, label):
-    panels = (
-        addon.BLENDMOL_PT_panel,
-        addon.BLENDMOL_PT_file_io,
-        addon.BLENDMOL_PT_edit,
-        addon.BLENDMOL_PT_constraints,
-        addon.BLENDMOL_PT_uff,
-        addon.BLENDMOL_PT_relax,
-        addon.BLENDMOL_PT_display,
-    )
+    panels = tuple(cls for cls in addon.CLASSES if cls.__name__.startswith("BLENDMOL_PT_"))
     for panel_cls in panels:
         if hasattr(panel_cls, "poll") and not panel_cls.poll(context):
             continue
@@ -85,11 +103,15 @@ addon.register()
 try:
     context = addon.bpy.context
     settings = context.scene.blend_mol_settings
+    assert settings.uff_live_auto_start is True
+    # Other smoke cases exercise data changes without starting a modal session.
+    settings.uff_live_auto_start = False
 
     # --- State 1: nothing selected -----------------------------------
     addon.bpy.ops.object.select_all(action="DESELECT")
     context.view_layer.objects.active = None
     draw_all(context, "no selection")
+    assert_preparation(context, False, False)
 
     # --- State 2: molecule root selected, no atom/bond -----------------
     molecule = read_v2000(ROOT / "tests" / "fixtures" / "217-59-4(トリフェニレン)2.mol")
@@ -114,6 +136,9 @@ try:
             if obj.get("blend_mol_kind") == "bond"
             and obj.get("blend_mol_bond_index") == index
         )
+
+    pending = addon.panels._pending_hydrogens(root)
+    assert pending == 0, pending
 
     # --- State 3: one explicit atom selected ----------------------------
     addon.bpy.ops.object.select_all(action="DESELECT")
@@ -174,6 +199,8 @@ try:
     minimize_result = addon.bpy.ops.blendmol.minimize_partial_uff()
     assert minimize_result == {"FINISHED"}, minimize_result
     draw_all(context, "after minimize_partial_uff (last-run log + restore buttons)")
+    assert addon.panels._pending_hydrogens(root) == 0
+    assert addon.panels._pending_hydrogens(None) is None
 
     # --- State 9: a position snapshot exists -----------------------------
     assert addon.bpy.ops.blendmol.save_position_snapshot() == {"FINISHED"}
@@ -186,6 +213,23 @@ try:
     assert addon.bpy.ops.blendmol.toggle_fixed_atom() == {"FINISHED"}
     draw_all(context, "fixed atom selected")
     addon.bpy.ops.blendmol.toggle_fixed_atom()
+
+    # Hydrogen preparation must work even when implicit hydrogens are hidden.
+    from blend_mol.molfile import read_smiles
+    implicit_root = addon.display._create_molecule(read_smiles("C"), settings, "pending_hydrogens")
+    addon.bpy.ops.object.select_all(action="DESELECT")
+    implicit_root.select_set(True)
+    context.view_layer.objects.active = implicit_root
+    settings.show_implicit_hydrogens = False
+    assert addon.panels._pending_hydrogens(implicit_root) == 4
+    assert_preparation(context, True, True)
+    draw_all(context, "implicit hydrogens hidden but preparation still needed")
+    assert addon.bpy.ops.blendmol.make_hydrogens_explicit() == {"FINISHED"}
+    assert addon.panels._pending_hydrogens(implicit_root) == 0
+    assert_preparation(context, False, False)
+    draw_all(context, "hydrogen preparation complete")
+    atom_object(0).select_set(True)
+    context.view_layer.objects.active = atom_object(0)
 
     # --- State 11: a stored Live UFF error must be visible in the panel ---
     # Previously blend_mol_live_uff_error was written but never read back
@@ -213,7 +257,7 @@ try:
     panel = FakePanel(addon.BLENDMOL_PT_uff)
     panel.layout = RecordingFakeLayout(recorded_labels)
     panel.draw(context)
-    assert any("collinear atoms have no stable angle gradient" in text for text in recorded_labels), (
+    assert "collinear atoms have no stable angle gradient" in " ".join(recorded_labels), (
         "the stored Live UFF error must be shown in the Partial UFF panel", recorded_labels
     )
     del root["blend_mol_live_uff_error"]

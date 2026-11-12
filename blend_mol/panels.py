@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import math
+import textwrap
 
 from bpy.types import Panel
 
-from .display import _managed_atom_elements, _palette_item
+from .display import _implicit_hydrogens, _managed_atom_elements, _palette_item
 from .live_uff import BLENDMOL_OT_toggle_live_uff, STATE
 from .native_backend import backend_status
 from .ops_constraints import (
@@ -50,14 +51,7 @@ from .uff import (
 
 
 class BLENDMOL_PT_panel(Panel):
-    """Root panel: the one always-visible entry point and current-selection status.
-
-    Everything else lives in collapsible sub-panels below, grouped by
-    workflow stage (file I/O, editing, constraints, UFF, display), so the
-    N-panel isn't one long flat list of equally-weighted buttons. No
-    operator or property was removed in this split -- every control from
-    the previous single-panel layout is still reachable, just regrouped.
-    """
+    """Current molecule and workflow panels."""
 
     bl_label = "Blend Mol"
     bl_idname = "BLENDMOL_PT_panel"
@@ -68,18 +62,15 @@ class BLENDMOL_PT_panel(Panel):
 
     def draw(self, context):
         layout = self.layout
-        new_row = layout.row()
-        new_row.scale_y = 1.5
-        new_row.operator(BLENDMOL_OT_new_molecule.bl_idname, icon="FILE_NEW")
         root = _selected_molecule_root(context)
         if root:
             layout.label(text=f"Editing: {root.name}", icon="OBJECT_DATA")
         else:
-            layout.label(text="Select an atom/bond/root, or create or import a molecule", icon="INFO")
+            layout.label(text="Create or import a molecule to begin", icon="INFO")
 
 
 class BLENDMOL_PT_file_io(Panel):
-    bl_label = "Import / Export"
+    bl_label = "Import"
     bl_idname = "BLENDMOL_PT_file_io"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -94,27 +85,72 @@ class BLENDMOL_PT_file_io(Panel):
         import_row = layout.row(align=True)
         import_row.operator(BLENDMOL_OT_import_v2000.bl_idname, text="MOL", icon="IMPORT")
         import_row.operator(BLENDMOL_OT_import_xyz.bl_idname, text="XYZ", icon="IMPORT")
+        import_row = layout.row(align=True)
         import_row.operator(BLENDMOL_OT_import_pdb.bl_idname, text="PDB", icon="IMPORT")
         import_row.operator(BLENDMOL_OT_import_sdf.bl_idname, text="SDF", icon="IMPORT")
         layout.operator(BLENDMOL_OT_import_smiles.bl_idname, icon="MODIFIER")
-        layout.separator()
-        layout.label(text="Export selected molecules")
-        export_row = layout.row(align=True)
-        export_row.operator(BLENDMOL_OT_export_v2000.bl_idname, text="MOL", icon="EXPORT")
-        export_row.operator(BLENDMOL_OT_export_xyz.bl_idname, text="XYZ", icon="EXPORT")
-        export_row.operator(BLENDMOL_OT_export_pdb.bl_idname, text="PDB", icon="EXPORT")
-        export_row.operator(BLENDMOL_OT_export_sdf.bl_idname, text="SDF", icon="EXPORT")
-        layout.operator(BLENDMOL_OT_export_uff_report.bl_idname, icon="FILE_TEXT")
+
+
+def _pending_hydrogens(root):
+    if root is None:
+        return None
+    try:
+        return len(_implicit_hydrogens(_deserialize_molecule(root["blend_mol_data"])))
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
 
 
 class BLENDMOL_PT_edit(Panel):
-    bl_label = "Edit Atoms & Bonds"
+    bl_label = "Atoms & Molecules"
     bl_idname = "BLENDMOL_PT_edit"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Blend Mol"
     bl_parent_id = "BLENDMOL_PT_panel"
     bl_order = 2
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.blend_mol_settings
+        root = _selected_molecule_root(context)
+        row = layout.row()
+        row.scale_y = 1.3
+        row.operator(BLENDMOL_OT_new_molecule.bl_idname, icon="FILE_NEW")
+        pending = _pending_hydrogens(root)
+        row = layout.row()
+        row.enabled = pending is not None and pending > 0
+        row.alert = bool(pending)
+        row.operator(BLENDMOL_OT_make_hydrogens_explicit.bl_idname,
+                     text="Hydrogens Explicit" if pending == 0 else "Make Hydrogens Explicit",
+                     icon="CHECKMARK" if pending == 0 else "MODIFIER")
+        if pending:
+            layout.label(text=f"{pending} hydrogens needed for auto UFF", icon="ERROR")
+        elif root and pending is None:
+            layout.label(text="Cannot read molecule data", icon="ERROR")
+        layout.separator()
+        layout.prop(settings, "edit_element")
+        column = layout.column(align=True)
+        column.enabled = root is not None
+        column.operator(BLENDMOL_OT_add_atom.bl_idname, text="Add Atom at Cursor", icon="ADD")
+        row = column.row()
+        row.enabled = _selected_explicit_atom(context) is not None
+        row.operator(BLENDMOL_OT_add_bonded_atom.bl_idname,
+                     text=f"Add Bonded Atom (Order {settings.bond_order})", icon="CON_TRACKTO")
+        if _selected_explicit_atom(context):
+            row = layout.row(align=True)
+            row.operator(BLENDMOL_OT_change_atom_element.bl_idname, text="Change Element")
+            row.operator(BLENDMOL_OT_delete_atom.bl_idname, text="Delete Atom", icon="TRASH")
+
+
+class BLENDMOL_PT_atom_details(Panel):
+    bl_label = "Atom Details & Coordinates"
+    bl_idname = "BLENDMOL_PT_atom_details"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Blend Mol"
+    bl_parent_id = "BLENDMOL_PT_edit"
+    bl_order = 1
+    bl_options = {"DEFAULT_CLOSED"}
 
     @classmethod
     def poll(cls, context):
@@ -124,63 +160,29 @@ class BLENDMOL_PT_edit(Panel):
         layout = self.layout
         settings = context.scene.blend_mol_settings
         root = _selected_molecule_root(context)
-        layout.label(text="Move atom objects, then synchronize")
-        layout.operator(BLENDMOL_OT_sync_atom_positions.bl_idname, icon="CON_TRANSFORM")
-        layout.separator()
-        layout.prop(settings, "edit_element")
         layout.prop(settings, "formal_charge")
-        layout.operator(BLENDMOL_OT_add_atom.bl_idname, icon="ADD")
-        layout.operator(BLENDMOL_OT_make_hydrogens_explicit.bl_idname, icon="MODIFIER")
-        selected_atom = _selected_explicit_atom(context)
-        if selected_atom:
-            atom_box = layout.box()
-            atom_box.prop(settings, "bond_order")
-            atom_box.operator(BLENDMOL_OT_add_bonded_atom.bl_idname, icon="CON_TRACKTO")
-            fixed_atoms = _fixed_atom_indices(root)
-            state = "fixed" if selected_atom[2] in fixed_atoms else "movable"
-            molecule = _deserialize_molecule(root["blend_mol_data"])
-            selected = molecule.atoms[selected_atom[2]]
-            label = f"Selected atom: {selected_atom[2] + 1} ({state}, {selected.formal_charge:+d})"
-            if selected.isotope:
-                label += f", isotope {selected.isotope}{selected.element}"
-            atom_box.label(text=label)
-            atom_box.operator(BLENDMOL_OT_change_atom_element.bl_idname, icon="MODIFIER")
-            atom_box.operator(BLENDMOL_OT_set_formal_charge.bl_idname, icon="ADD")
-            atom_box.operator(BLENDMOL_OT_toggle_fixed_atom.bl_idname, icon="PINNED")
-            atom_box.operator(BLENDMOL_OT_delete_atom.bl_idname, icon="TRASH")
-        layout.separator()
-        layout.label(text="Select two atoms to create or change a bond")
-        layout.operator(BLENDMOL_OT_set_bond.bl_idname, icon="CON_TRACKTO")
-        selected_bond = _selected_explicit_bond(context)
-        if selected_bond:
-            layout.label(text=f"Selected bond: {selected_bond[2] + 1}")
-            layout.operator(BLENDMOL_OT_delete_bond.bl_idname, icon="TRASH")
-        try:
-            molecule = _deserialize_molecule(root["blend_mol_data"])
-            validation_messages = _molecule_validation_messages(molecule)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            validation_messages = ["Stored molecule data cannot be validated"]
-        validation_box = layout.box()
-        if validation_messages:
-            validation_box.alert = True
-            validation_box.label(text="Valence warnings", icon="ERROR")
-            for message in validation_messages[:4]:
-                validation_box.label(text=message)
-            if len(validation_messages) > 4:
-                validation_box.label(text=f"… and {len(validation_messages) - 4} more")
-            validation_box.alert = False
-        else:
-            validation_box.label(text="Valence: no over-valence warnings", icon="CHECKMARK")
+        row = layout.row()
+        selected = _selected_explicit_atom(context)
+        row.enabled = selected is not None
+        row.operator(BLENDMOL_OT_set_formal_charge.bl_idname, icon="ADD")
+        if selected:
+            try:
+                atom = _deserialize_molecule(root["blend_mol_data"]).atoms[selected[2]]
+                layout.label(text=f"Atom {selected[2] + 1}: {atom.element}, charge {atom.formal_charge:+d}")
+                if atom.isotope:
+                    layout.label(text=f"Isotope: {atom.isotope}{atom.element}")
+            except (KeyError, IndexError, TypeError, ValueError):
+                layout.label(text="Cannot read selected atom", icon="ERROR")
+        layout.operator(BLENDMOL_OT_sync_atom_positions.bl_idname, icon="CON_TRANSFORM")
 
 
-class BLENDMOL_PT_constraints(Panel):
-    bl_label = "UFF Constraints"
-    bl_idname = "BLENDMOL_PT_constraints"
+class BLENDMOL_PT_bonds(Panel):
+    bl_label = "Bonds"
+    bl_idname = "BLENDMOL_PT_bonds"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Blend Mol"
     bl_parent_id = "BLENDMOL_PT_panel"
-    bl_options = {"DEFAULT_CLOSED"}
     bl_order = 3
 
     @classmethod
@@ -191,7 +193,55 @@ class BLENDMOL_PT_constraints(Panel):
         layout = self.layout
         settings = context.scene.blend_mol_settings
         root = _selected_molecule_root(context)
+        layout.prop(settings, "bond_order")
+        pair = _selected_explicit_atoms(context)
+        row = layout.row()
+        row.enabled = pair is not None
+        row.operator(BLENDMOL_OT_set_bond.bl_idname, text="Create / Change Bond", icon="CON_TRACKTO")
+        if pair is None:
+            layout.label(text="Select two atoms to connect", icon="INFO")
+        row = layout.row()
+        row.enabled = _selected_explicit_bond(context) is not None
+        row.operator(BLENDMOL_OT_delete_bond.bl_idname, text="Delete Bond", icon="TRASH")
+        try:
+            molecule = _deserialize_molecule(root["blend_mol_data"])
+            validation_messages = _molecule_validation_messages(molecule)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            validation_messages = ["Stored molecule data cannot be validated"]
+        if validation_messages:
+            validation_box = layout.box()
+            validation_box.alert = True
+            validation_box.label(text="Valence warnings", icon="ERROR")
+            for message in validation_messages[:4]:
+                validation_box.label(text=message)
+            if len(validation_messages) > 4:
+                validation_box.label(text=f"… and {len(validation_messages) - 4} more")
+            validation_box.alert = False
 
+
+class BLENDMOL_PT_constraints(Panel):
+    bl_label = "UFF Constraints"
+    bl_idname = "BLENDMOL_PT_constraints"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Blend Mol"
+    bl_parent_id = "BLENDMOL_PT_uff"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 2
+
+    @classmethod
+    def poll(cls, context):
+        return _selected_molecule_root(context) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.blend_mol_settings
+        root = _selected_molecule_root(context)
+
+        row = layout.row()
+        row.enabled = _selected_explicit_atom(context) is not None
+        row.operator(BLENDMOL_OT_toggle_fixed_atom.bl_idname, icon="PINNED")
+        layout.label(text=f"Fixed atoms: {len(_fixed_atom_indices(root))}")
         constraint_box = layout.box()
         constraint_box.label(text="Distance: select two atoms")
         constraint_box.prop(settings, "distance_constraint_target")
@@ -311,13 +361,72 @@ class BLENDMOL_PT_constraints(Panel):
 
 
 class BLENDMOL_PT_uff(Panel):
-    bl_label = "Partial UFF"
+    bl_label = "UFF"
     bl_idname = "BLENDMOL_PT_uff"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Blend Mol"
     bl_parent_id = "BLENDMOL_PT_panel"
     bl_order = 4
+
+    @classmethod
+    def poll(cls, context):
+        return _selected_molecule_root(context) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.blend_mol_settings
+        root = _selected_molecule_root(context)
+        layout.prop(settings, "uff_live_auto_start", text="Auto UFF When Moving Atoms")
+        try:
+            report = type_molecule(_deserialize_molecule(root["blend_mol_data"]))
+        except (KeyError, IndexError, TypeError, ValueError):
+            layout.label(text="Cannot read molecule data", icon="ERROR")
+            return
+        pending = _pending_hydrogens(root)
+        running = STATE.operator is not None and STATE.operator._root_name == root.name
+        if running:
+            phase = root.get("blend_mol_live_uff_phase", "ready")
+            layout.label(text=f"Live UFF: {phase.title()}", icon="PLAY")
+        elif pending:
+            layout.label(text="Auto UFF needs explicit hydrogens", icon="ERROR")
+            layout.label(text="Prepare above, or start Live UFF")
+        elif report.ready:
+            layout.label(text="Ready to move atoms" if settings.uff_live_auto_start else "Ready for UFF",
+                         icon="CHECKMARK")
+        if not report.ready:
+            layout.label(text="Not ready for UFF", icon="ERROR")
+            for message in report.messages[:3]:
+                layout.label(text=message)
+        row = layout.row()
+        row.scale_y = 1.3
+        row.enabled = running or report.ready
+        row.operator(BLENDMOL_OT_toggle_live_uff.bl_idname,
+                     text="Stop Live UFF" if running else "Start Live UFF",
+                     icon="PAUSE" if running else "PLAY")
+        row = layout.row()
+        row.enabled = report.ready and not running
+        row.operator(BLENDMOL_OT_minimize_partial_uff.bl_idname, text="Minimize UFF", icon="MOD_SMOOTH")
+        if "blend_mol_live_uff_error" in root:
+            box = layout.box()
+            box.alert = True
+            box.label(text="Live UFF needs attention", icon="ERROR")
+            for line in textwrap.wrap(str(root["blend_mol_live_uff_error"]), width=34):
+                box.label(text=line)
+            row = layout.row()
+            row.prop(settings, "jitter_magnitude")
+            row.operator(BLENDMOL_OT_jitter_atom_positions.bl_idname, text="Jitter", icon="MOD_NOISE")
+
+
+class BLENDMOL_PT_uff_details(Panel):
+    bl_label = "UFF Settings & Diagnostics"
+    bl_idname = "BLENDMOL_PT_uff_details"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Blend Mol"
+    bl_parent_id = "BLENDMOL_PT_uff"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 1
 
     @classmethod
     def poll(cls, context):
@@ -402,35 +511,8 @@ class BLENDMOL_PT_uff(Panel):
                     text=f"Compute backend: {compute_status['active'].title()}",
                     icon="CHECKMARK" if compute_status["native_available"] else "INFO",
                 )
-                minimize_row = uff_box.row()
-                minimize_row.scale_y = 1.3
-                minimize_row.operator(BLENDMOL_OT_minimize_partial_uff.bl_idname, icon="MOD_SMOOTH")
                 live_box = uff_box.box()
-                live_box.label(text="Interactive UFF relaxation", icon="TRACKING")
-                live_running = bool(
-                    STATE.operator is not None
-                    and STATE.operator._root_name == root.name
-                )
-                live_row = live_box.row()
-                live_row.scale_y = 1.5
-                live_row.operator(
-                    BLENDMOL_OT_toggle_live_uff.bl_idname,
-                    text="Stop Live UFF" if live_running else "Start Live UFF",
-                    icon="PAUSE" if live_running else "PLAY",
-                )
-                if live_running:
-                    phase = root.get("blend_mol_live_uff_phase", "ready")
-                    live_box.label(text=f"Live state: {phase.title()}")
-                if "blend_mol_live_uff_error" in root:
-                    # Live UFF failures (e.g. the collinear-angle error) are
-                    # also reported via self.report when they happen, but
-                    # that status-bar message is easy to miss mid-drag; keep
-                    # it visible here until the next Start Live UFF clears it.
-                    live_box.label(text=root["blend_mol_live_uff_error"], icon="ERROR")
-                    error_row = live_box.row()
-                    error_row.prop(settings, "jitter_magnitude")
-                    error_row.operator(BLENDMOL_OT_jitter_atom_positions.bl_idname, icon="MOD_NOISE")
-                live_box.prop(settings, "uff_live_auto_start")
+                live_box.label(text="Interactive update diagnostics")
                 if "blend_mol_uff_live_last" in root:
                     try:
                         live_run = json.loads(root["blend_mol_uff_live_last"])
@@ -521,14 +603,14 @@ class BLENDMOL_PT_uff(Panel):
 
 
 class BLENDMOL_PT_relax(Panel):
-    bl_label = "Display Relaxation & Snapshot"
+    bl_label = "Coordinates & Recovery"
     bl_idname = "BLENDMOL_PT_relax"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Blend Mol"
-    bl_parent_id = "BLENDMOL_PT_panel"
+    bl_parent_id = "BLENDMOL_PT_display"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 5
+    bl_order = 2
 
     @classmethod
     def poll(cls, context):
@@ -552,14 +634,14 @@ class BLENDMOL_PT_relax(Panel):
 
 
 class BLENDMOL_PT_display(Panel):
-    bl_label = "Display & Mesh Settings"
+    bl_label = "Display"
     bl_idname = "BLENDMOL_PT_display"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Blend Mol"
     bl_parent_id = "BLENDMOL_PT_panel"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 6
+    bl_order = 5
 
     def draw(self, context):
         layout = self.layout
@@ -573,7 +655,7 @@ class BLENDMOL_PT_display(Panel):
                 element_box.prop(item, "color", text=f"{element} ({count})")
             element_box.operator(BLENDMOL_OT_reset_element_colors.bl_idname, icon="LOOP_BACK")
             layout.separator()
-        layout.label(text="Display defaults for next import")
+        layout.label(text="Geometry (rebuild to apply)")
         layout.prop(settings, "atom_scale")
         layout.prop(settings, "bond_radius")
         layout.prop(settings, "show_implicit_hydrogens")
@@ -582,14 +664,55 @@ class BLENDMOL_PT_display(Panel):
         layout.label(text="Material (applies immediately)")
         layout.prop(settings, "roughness")
         layout.prop(settings, "metallic")
-        layout.separator()
+
+
+class BLENDMOL_PT_mesh(Panel):
+    bl_label = "Mesh Detail"
+    bl_idname = "BLENDMOL_PT_mesh"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Blend Mol"
+    bl_parent_id = "BLENDMOL_PT_display"
+    bl_order = 1
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.blend_mol_settings
+        root = _selected_molecule_root(context)
         mesh_box = layout.box()
         mesh_box.label(text="Mesh detail")
-        mesh_box.label(text="Defaults for next import")
+        mesh_box.label(text="Next import or rebuild")
         mesh_box.prop(settings, "atom_segments")
         mesh_box.prop(settings, "atom_rings")
         mesh_box.prop(settings, "bond_sides")
         mesh_box.prop(settings, "bond_length_segments")
         mesh_box.separator()
+        mesh_box.operator(BLENDMOL_OT_rebuild_display.bl_idname, icon="FILE_REFRESH")
+        mesh_box.label(text="Subdivision: all Blend Mol objects")
         mesh_box.prop(settings, "subdivision_levels")
         mesh_box.operator(BLENDMOL_OT_add_subdivision.bl_idname, icon="MOD_SUBSURF")
+
+
+class BLENDMOL_PT_export(Panel):
+    bl_label = "Export"
+    bl_idname = "BLENDMOL_PT_export"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Blend Mol"
+    bl_parent_id = "BLENDMOL_PT_panel"
+    bl_order = 6
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.blend_mol_settings
+        root = _selected_molecule_root(context)
+        layout.label(text="Export selected molecules")
+        export_row = layout.row(align=True)
+        export_row.operator(BLENDMOL_OT_export_v2000.bl_idname, text="MOL", icon="EXPORT")
+        export_row.operator(BLENDMOL_OT_export_xyz.bl_idname, text="XYZ", icon="EXPORT")
+        export_row = layout.row(align=True)
+        export_row.operator(BLENDMOL_OT_export_pdb.bl_idname, text="PDB", icon="EXPORT")
+        export_row.operator(BLENDMOL_OT_export_sdf.bl_idname, text="SDF", icon="EXPORT")
+        layout.operator(BLENDMOL_OT_export_uff_report.bl_idname, icon="FILE_TEXT")

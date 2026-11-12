@@ -23,6 +23,9 @@ from blend_mol.uff import (
 
 
 addon.register()
+# Initial lifecycle probes manage timer registration themselves. Automatic
+# movement triggering is enabled explicitly by its dedicated cases below.
+addon.bpy.context.scene.blend_mol_settings.uff_live_auto_start = False
 try:
     native_status = addon.native_backend.backend_status()
     assert native_status["native_available"], native_status["detail"]
