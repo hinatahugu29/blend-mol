@@ -272,6 +272,45 @@ try:
     drive_gesture_to_completion()
     assert "collinear" in collinear_root.get("blend_mol_live_uff_error", "")
 
+    # --- Auto-start must never rebuild atom objects mid-transform ----------
+    # Reported crash (0.1.87): with automatic start on, G-dragging an atom of a
+    # molecule that still had implicit hydrogens made Live UFF explicitate
+    # them, deleting and recreating every atom object -- including the one
+    # Blender's move operator was holding -- and Blender crashed with an access
+    # violation in transformEnd when the move finished.
+    implicit_root = addon.display._create_molecule(
+        addon.molfile.read_smiles("c1ccccc1", "implicit benzene"), settings, "implicit_smoke",
+    )
+    implicit_collection = addon.scene_data._molecule_collection(implicit_root)
+    dragged = next(
+        obj for obj in implicit_collection.objects
+        if obj.get("blend_mol_kind") == "atom" and not obj.get("blend_mol_implicit")
+        and obj.get("blend_mol_atom_index") == 0
+    )
+    objects_before = {obj.name for obj in implicit_collection.objects}
+    for obj in addon.bpy.context.selected_objects:
+        obj.select_set(False)
+    dragged.select_set(True)
+    addon.bpy.context.view_layer.objects.active = dragged
+    addon.live_uff.STATE.error_cooldown.clear()
+    dragged.location.x += 0.05
+    addon.bpy.context.view_layer.update()
+    assert addon.live_uff.STATE.auto_timer_pending, "the move must still queue an automatic start"
+    addon.bpy.app.timers.unregister(addon.live_uff._start_auto_live_uff)
+    addon.live_uff._start_auto_live_uff()
+    assert addon.live_uff.STATE.operator is None, "auto-start must refuse while hydrogens are implicit"
+    assert dragged.name in implicit_collection.objects, "the dragged atom object must survive"
+    assert {obj.name for obj in implicit_collection.objects} == objects_before, "no object may be rebuilt"
+    assert "explicit" in implicit_root.get("blend_mol_live_uff_error", ""), implicit_root.get(
+        "blend_mol_live_uff_error"
+    )
+    # A manual start (not inside a transform) still makes hydrogens explicit.
+    assert addon.bpy.ops.blendmol.toggle_live_uff("EXEC_DEFAULT") in ({"RUNNING_MODAL"}, {"FINISHED"})
+    stored = addon.scene_data._deserialize_molecule(implicit_root["blend_mol_data"])
+    assert sum(1 for atom in stored.atoms if atom.element == "H") == 6
+    if addon.live_uff.STATE.operator is not None:
+        addon.live_uff.STATE.operator._finish(addon.bpy.context)
+
     # --- Documented automation boundary: real WM undo/redo need a window --
     undo_blocked = False
     try:
@@ -293,6 +332,7 @@ try:
         "real_auto_start_escape_cancel_ok",
         "mid_gesture_multi_step_no_duplicate_session_ok",
         "auto_start_error_cooldown_ok",
+        "auto_start_never_rebuilds_mid_transform_ok",
         "background_undo_redo_poll_boundary_confirmed",
         session_1["applied_updates"],
         session_2["applied_updates"],

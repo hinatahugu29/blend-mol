@@ -14,7 +14,7 @@ from bpy.types import Operator
 
 from .display import _update_explicit_display_geometry
 from .live_worker import adapt_chunk_iterations, LatestOnlyWorker, should_continue_relaxation
-from .ops_edit import _ensure_hydrogens_explicit_for_uff
+from .ops_edit import _ensure_hydrogens_explicit_for_uff, _with_hydrogens_explicit
 from .scene_data import (
     _angle_constraints, _apply_serialized_positions, _deserialize_molecule,
     _dihedral_constraints, _distance_constraints, _fixed_atom_indices, _molecule_collection,
@@ -294,6 +294,20 @@ class BLENDMOL_OT_toggle_live_uff(Operator):
             molecule = _deserialize_molecule(root["blend_mol_data"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.report({"ERROR"}, f"Stored molecule data is invalid: {exc}")
+            return {"CANCELLED"}
+        if self.auto_stop_when_ready and _with_hydrogens_explicit(molecule)[1]:
+            # An automatic start runs while Blender's own move operator is
+            # still active. Making hydrogens explicit deletes and recreates
+            # every atom object, including the one being dragged, and the
+            # move operator then crashes Blender when it finishes (access
+            # violation in transformEnd). Never rebuild here; ask instead.
+            message = (
+                "Live UFF did not start automatically: make implicit hydrogens explicit "
+                "first, or click Start Live UFF"
+            )
+            root["blend_mol_live_uff_error"] = message
+            STATE.error_cooldown[(root.name, atom_index)] = perf_counter()
+            self.report({"WARNING"}, message)
             return {"CANCELLED"}
         molecule = _ensure_hydrogens_explicit_for_uff(
             root, collection, molecule, context.scene.blend_mol_settings,
