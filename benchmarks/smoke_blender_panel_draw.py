@@ -53,6 +53,9 @@ class FakeLayout:
     def column(self, align=False):
         return FakeLayout()
 
+    def split(self, factor=0.5, align=False):
+        return FakeLayout()
+
 
 class FakePanel:
     def __init__(self, panel_cls):

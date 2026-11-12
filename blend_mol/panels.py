@@ -132,10 +132,12 @@ class BLENDMOL_PT_edit(Panel):
         column = layout.column(align=True)
         column.enabled = root is not None
         column.operator(BLENDMOL_OT_add_atom.bl_idname, text="Add Atom at Cursor", icon="ADD")
-        row = column.row()
-        row.enabled = _selected_explicit_atom(context) is not None
-        row.operator(BLENDMOL_OT_add_bonded_atom.bl_idname,
-                     text=f"Add Bonded Atom (Order {settings.bond_order})", icon="CON_TRACKTO")
+        split = column.split(factor=0.76, align=True)
+        button = split.row(align=True)
+        button.enabled = _selected_explicit_atom(context) is not None
+        button.operator(BLENDMOL_OT_add_bonded_atom.bl_idname,
+                        text="Add Bonded Atom", icon="CON_TRACKTO")
+        split.prop(settings, "bond_order", text="")
         if _selected_explicit_atom(context):
             row = layout.row(align=True)
             row.operator(BLENDMOL_OT_change_atom_element.bl_idname, text="Change Element")

@@ -77,7 +77,7 @@
       <li>結合の起点にしたい原子を選択します。</li>
       <li>新しい原子を置く位置へ 3D カーソルを移動します。</li>
       <li><b>Element</b> と <b>Bond Order</b> を選びます。</li>
-      <li><b>Add Bonded Atom (Order …)</b> を押します。</li>
+      <li><b>Add Bonded Atom</b> を押します。</li>
     </ol>
     <p class="result">新しい原子と、選択していた原子からの結合が同時に作成されます。<span class="new">NEW</span> 選択原子が既に飽和していて通常なら結合を追加できない場合は、原子価が収まるまで選択原子の明示水素を自動的に（必要なら複数個）新しい原子へ置き換えます。手動で水素を削除しておく必要はありません。</p>
     <h4>原子だけを追加する</h4>
@@ -90,7 +90,7 @@
       <li><b>Create / Change Bond</b> を押します。</li>
     </ol>
     <p class="result">未結合の2原子なら結合を新規作成します。すでに結合済みなら、その結合次数を変更します。</p>
-    <p class="tip"><b>注意:</b> 原子価を超える結合は作成・変更できません。下部の <b>Valence</b> 表示も確認してください（この操作では明示水素の自動置換は行われません。先に対象原子の水素を手動で削除するか、<b>Add Bonded Atom (Order …)</b> を使ってください）。</p>
+    <p class="tip"><b>注意:</b> 原子価を超える結合は作成・変更できません。下部の <b>Valence</b> 表示も確認してください（この操作では明示水素の自動置換は行われません。先に対象原子の水素を手動で削除するか、<b>Add Bonded Atom</b> を使ってください）。</p>
 
     <h3><span class="step">4</span>結合・原子を変更・削除する</h3>
     <h4>結合次数を変える</h4>
@@ -135,7 +135,7 @@
       <tr><td><b>Sync Edited Atom Positions</b></td><td>分子内の何か</td><td>Blender の移動ツールで変更した原子オブジェクトの位置を、分子データへ反映します。原子をドラッグした後に使います。</td></tr>
       <tr><td><b>Add Atom at Cursor</b></td><td>対象分子</td><td><b>Element</b> と <b>Formal Charge</b> を使い、3D カーソル位置に未結合の原子を追加します。</td></tr>
       <tr><td><b>Make Hydrogens Explicit</b></td><td>対象分子</td><td>表示上の暗黙水素を、選択・編集できる原子と単結合に変換します。<span class="new">NEW</span> UFF の実行（Minimize UFF / Live UFF）では以下のとおり自動的に行われるため、手動開始では事前実行を省略できます。原子移動による自動開始を使う場合は、先にこのボタンを押してください。</td></tr>
-      <tr><td><b>Add Bonded Atom (Order …)</b></td><td>暗黙水素でない原子を1つ</td><td>3D カーソル位置に新しい原子を置き、選択原子へ指定結合次数で結合します。<span class="new">NEW</span> 選択原子が飽和していて通常なら結合を追加できない場合、指定した結合次数が収まるまで明示水素を1個ずつ（必要なら複数個）新しい原子へ自動的に置き換えます。置き換えても収まらない場合は分子を変更せずエラーを表示します。</td></tr>
+      <tr><td><b>Add Bonded Atom</b></td><td>暗黙水素でない原子を1つ</td><td>3D カーソル位置に新しい原子を置き、選択原子へ指定結合次数で結合します。<span class="new">NEW</span> 選択原子が飽和していて通常なら結合を追加できない場合、指定した結合次数が収まるまで明示水素を1個ずつ（必要なら複数個）新しい原子へ自動的に置き換えます。置き換えても収まらない場合は分子を変更せずエラーを表示します。</td></tr>
       <tr><td><b>Change Selected Atom Element</b></td><td>暗黙水素でない原子を1つ</td><td>選択原子の元素を <b>Element</b> の値に変更します。座標と電荷は保持されます。</td></tr>
       <tr><td><b>Set Selected Atom Charge</b></td><td>暗黙水素でない原子を1つ</td><td>選択原子の形式電荷を <b>Formal Charge</b> の値に変更します。</td></tr>
       <tr><td><b>Toggle Fixed Selected Atom</b></td><td>暗黙水素でない原子を1つ</td><td>UFF・表示整形でその原子を固定／固定解除します。固定原子は最小化中に動きません。</td></tr>

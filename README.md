@@ -52,6 +52,8 @@ Current capabilities include starting from an empty scene, importing and exporti
 - Version 0.1.88 fixes a Blender crash reported from real use: with Start Live UFF When Moving an Atom on, G-dragging an atom of a molecule whose hydrogens were still implicit made the automatic start explicitate them, which deletes and recreates every atom object, including the one Blender's move operator was holding; Blender then crashed with an access violation when the move finished. An automatic start now never rebuilds objects: it does not start and shows "make implicit hydrogens explicit first, or click Start Live UFF" instead. A manual Start Live UFF still explicitates hydrogens as before. The Live UFF gesture smoke test reproduces the path (and fails without the fix).
 - Version 0.1.89 reorganizes the sidebar around atoms, bonds and UFF, separates Import and Export, and closes advanced settings by default. Hydrogen preparation is highlighted in red when needed. Automatic Live UFF defaults to on for new settings; existing saved settings are preserved.
 
+- Version 0.1.90 places an editable bond-order number beside Add Bonded Atom, sharing the value in Bonds.
+
 ## More
 
 - User and installation details: [`blend_mol/README.md`](blend_mol/README.md)
