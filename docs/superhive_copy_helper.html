@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blend Mol - Superhive 出品作業用コピペシート</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --ok: #22c55e;
+      --code-bg: #0b1120;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 16px 64px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.5rem;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .faq-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+    }
+    .faq-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 0.95rem;
+    }
+    .field-block {
+      margin-bottom: 12px;
+    }
+    .field-block:last-child {
+      margin-bottom: 0;
+    }
+    .field-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .field-label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .copy-btn {
+      appearance: none;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .copy-btn:hover {
+      background: var(--accent);
+      color: #0f172a;
+    }
+    .copy-btn.copied {
+      border-color: var(--ok);
+      background: var(--ok);
+      color: #052e16;
+    }
+    .copy-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      user-select: all;
+    }
+    .ja-note {
+      margin: 6px 0 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    details {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      margin-top: 24px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .extra-item {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Blend Mol (v0.1.92) — Superhive 出品作業用コピペシート</h1>
+      <p class="subtitle">各項目の「コピー」ボタンを押すと、そのままクリップボードにコピーされます。FAQ 登録後は <strong>Save Changes</strong> を忘れずに押してください。</p>
+    </header>
+
+    <!-- FAQ 1 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 1 — 対応 Blender バージョン</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq1-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq1-q">Which Blender versions are supported?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq1-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq1-a">Blend Mol is packaged as a Blender Extension and requires Blender 5.2 or newer. Earlier versions (Blender 4.x, 5.0, and 5.1) are not supported.</div>
+        <p class="ja-note">訳: Blender 5.2 以降（Extension 形式）が必要です。Blender 4.x / 5.0 / 5.1 には対応していません。</p>
+      </div>
+    </section>
+
+    <!-- FAQ 2 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 2 — 外部ツールの要否</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq2-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq2-q">Do I need to install Open Babel, RDKit, or any external Python packages?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq2-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq2-a">No. Blend Mol has zero external dependencies. The 3D SMILES distance-geometry embedder, chemical file importers/exporters, and the UFF solver (with both a compiled Rust backend and a pure-Python fallback) are all self-contained inside the extension ZIP.</div>
+        <p class="ja-note">訳: 不要です。3D SMILES 生成、ファイル入出力、UFF ソルバー（Rust＋純 Python フォールバック）はすべて ZIP 内に完結しています。</p>
+      </div>
+    </section>
+
+    <!-- FAQ 3 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 3 — 対応 OS（Windows / Linux / macOS）</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq3-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq3-q">Which operating systems are supported?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq3-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq3-a">Windows (x64) and Linux (x64) are verified in automated CI with Blender 5.2+ and include native Rust libraries (.dll / .so). A macOS Universal library (.dylib for Apple Silicon and Intel) is also included; however, the macOS native build is currently unsigned and awaiting real-world user feedback. If the native library cannot load on any system, Blend Mol automatically falls back to the built-in pure-Python UFF solver.</div>
+        <p class="ja-note">訳: Windows / Linux は Blender 5.2+ の CI で自動検証済み。macOS Universal (.dylib) も同梱していますが未署名・実機フィードバック待ちです（ロード不可時は純 Python へ自動フォールバック）。</p>
+      </div>
+    </section>
+
+    <!-- FAQ 4 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 4 — 対応フォーマットと対応元素</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq4-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq4-q">What file formats and elements are supported?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq4-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq4-a">Import &amp; Export: MDL MOL (V2000 and V3000), SDF (multi-record with data items), XYZ, and PDB, plus SMILES import (with 3D conformation generation, tetrahedral @/@@/@TH1/@TH2 and E/Z / \ stereo, isotopes, and aromatic Kekulization) and Partial UFF JSON report export. Currently 18 main-group elements are supported: H, C, N, O, F, P, S, Cl, Br, I, B, Si, Ge, Sn, As, Sb, Se, and Te.</div>
+        <p class="ja-note">訳: MOL (V2000/V3000)、SDF（複数レコード）、XYZ、PDB の入出力、SMILES 生成、UFF JSON 出力に対応。元素は主族 18 元素に対応。</p>
+      </div>
+    </section>
+
+    <!-- FAQ 5 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 5 — Partial UFF の範囲と現在の制限</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq5-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq5-q">What does "Partial UFF" mean, and are there any current limitations?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq5-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq5-a">Blend Mol's Partial UFF evaluates five energy terms—bond stretch, angle bend, torsion, out-of-plane inversion, and van der Waals—and its energies have been cross-checked against Open Babel 3.1.1. In v0.1.92, electrostatic (Coulomb) interactions and transition metals are not included yet, and SMILES stereo tags for allene/square-planar/octahedral centers are not supported. Canceling Live UFF with Esc or right-click restores coordinates from the start of that Live UFF session.</div>
+        <p class="ja-note">訳: 結合伸縮・変角・二面角・面外・vdW の 5 項を計算（Open Babel 3.1.1 と照合済み）。静電項・遷移金属・特殊立体表記は未対応。Esc キャンセルはセッション開始時へ戻ります。</p>
+      </div>
+    </section>
+
+    <!-- FAQ 6 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 6 — Auto Live UFF の水素明示化メッセージ</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq6-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq6-q">Why does Auto Live UFF ask me to "make implicit hydrogens explicit first"?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq6-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq6-a">Converting implicit hydrogens into editable explicit atoms rebuilds the molecule's mesh objects in Blender, which cannot be done safely while Blender's move operator (G) is actively holding an atom. Click the red "Make Hydrogens Explicit" button in the Atoms &amp; Molecules panel once before dragging, or click "Start Live UFF" manually (which prepares hydrogens automatically).</div>
+        <p class="ja-note">訳: 水素明示化はオブジェクト再構築を伴うため、移動操作（G）中の自動開始では行いません。事前に赤いボタンを押すか、手動で Start Live UFF を押してください。</p>
+      </div>
+    </section>
+
+    <!-- FAQ 7 -->
+    <section class="faq-card">
+      <div class="faq-header">FAQ 7 — Early Bird 価格・ライセンス・今後のアップデート</div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Question</span>
+          <button class="copy-btn" data-target="faq7-q">コピー</button>
+        </div>
+        <div class="copy-box" id="faq7-q">What is included in the $10 Early Bird price, and what is the license?</div>
+      </div>
+      <div class="field-block">
+        <div class="field-top">
+          <span class="field-label">Answer</span>
+          <button class="copy-btn" data-target="faq7-a">コピー</button>
+        </div>
+        <div class="copy-box" id="faq7-a">The Early Bird price ($10 for the first 50 buyers) includes Blend Mol v0.1.92 and upcoming updates as the add-on grows toward electrostatics, transition metals, conformer search, and additional display styles. Blend Mol is licensed under GPL-3.0-or-later.</div>
+        <p class="ja-note">訳: 先着 50 名様限定の $10 Early Bird 価格には v0.1.92 と今後のアップデートが含まれます。ライセンスは GPL-3.0-or-later です。</p>
+      </div>
+    </section>
+
+    <!-- 補助：他セクションのコピペ -->
+    <details>
+      <summary>おまけ：Social Media Excerpt &amp; Tags もここからコピー</summary>
+      <div class="extra-item">
+        <div class="field-top">
+          <span class="field-label">Social Media Excerpt（標準・207文字）</span>
+          <button class="copy-btn" data-target="extra-excerpt">コピー</button>
+        </div>
+        <div class="copy-box" id="extra-excerpt">Build, edit, and optimize molecules directly in Blender 5.2+. Features SMILES 3D generation, MOL/SDF/PDB/XYZ I/O, and real-time interactive UFF relaxation with a fast Rust backend—no external tools required.</div>
+      </div>
+      <div class="extra-item">
+        <div class="field-top">
+          <span class="field-label">Tags（12個）</span>
+          <button class="copy-btn" data-target="extra-tags">コピー</button>
+        </div>
+        <div class="copy-box" id="extra-tags">chemistry, molecule, science, visualization, modeling, smiles, pdb, sdf, uff, physics, importer, education</div>
+      </div>
+    </details>
+  </div>
+
+  <script>
+    document.querySelectorAll(".copy-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const target = document.getElementById(button.dataset.target);
+        if (!target) return;
+        const text = target.textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          const area = document.createElement("textarea");
+          area.value = text;
+          document.body.appendChild(area);
+          area.select();
+          document.execCommand("copy");
+          document.body.removeChild(area);
+        }
+        const original = button.textContent;
+        button.textContent = "コピーしました ✓";
+        button.classList.add("copied");
+        setTimeout(() => {
+          button.textContent = original;
+          button.classList.remove("copied");
+        }, 1400);
+      });
+    });
+  </script>
+</body>
+</html>

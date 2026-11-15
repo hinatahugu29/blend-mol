@@ -1,0 +1,120 @@
+<!--
+  Superhive (Blender Market) Product Page Description HTML for Blend Mol (v0.1.92)
+  Note: Uses standard semantic HTML tags only (no <style> or <script>) so it renders
+  cleanly across Superhive's light/dark themes and passes HTML sanitization.
+-->
+
+<blockquote>
+  <p><strong>🎉 Early Bird Offer: $10 for the first 50 buyers!</strong><br>
+  Get Blend Mol at the launch price during early release. Price will increase as major features (electrostatics, transition metals, conformer search, and additional display styles) are added.</p>
+</blockquote>
+
+<h2>What is Blend Mol?</h2>
+<p><strong>Blend Mol</strong> is a Blender 5.2+ extension for <strong>building, editing, visualizing, and UFF-optimizing molecules</strong> directly inside the 3D Viewport—with <strong>zero external dependencies</strong> (no Open Babel, RDKit, or Python package installation required).</p>
+<p>Whether you are a chemist, researcher, educator, or science illustrator, Blend Mol lets you go from a SMILES string or chemical file to a physically relaxed 3D ball-and-stick model in seconds, or build and sculpt molecules atom by atom in real time.</p>
+
+<!-- [MEDIA PLACEHOLDER] Recommended: Embed a short MP4 demo video here showing:
+     1) SMILES 3D import (e.g., Caffeine / Menthol)
+     2) Moving an atom with G while Live UFF relaxes the molecule in real time
+     3) Exporting / rendering -->
+
+<hr>
+
+<h2>Key Features</h2>
+
+<h3>1. Real-Time Interactive Live UFF &amp; Geometry Optimization</h3>
+<ul>
+  <li><strong>Auto Live UFF on Atom Move</strong>: Simply grab and move an atom (<code>G</code>) and surrounding atoms relax smoothly in the background—then stop automatically once settled.</li>
+  <li><strong>Non-Blocking Background Solver</strong>: UFF calculations run on a dedicated background worker thread so Blender's UI stays responsive. Press <code>Esc</code> or right-click to cancel and restore the session's starting coordinates.</li>
+  <li><strong>Three Optimizers</strong>: Stateful <strong>L-BFGS</strong> (default), <strong>FIRE2</strong>, and <strong>Steepest Descent</strong>, preserving momentum/curvature history across interactive updates.</li>
+  <li><strong>Rust Native Acceleration + Python Fallback</strong>: Includes a multi-threaded Rust kernel for van der Waals and numerical torsion/inversion gradients, with automatic fallback to the pure-Python reference solver.</li>
+  <li><strong>Partial UFF Force Field</strong>: Evaluates bond stretch, angle bend, torsion, out-of-plane inversion, and van der Waals terms (cross-checked against Open Babel 3.1.1).</li>
+  <li><strong>Constraints &amp; Pinning</strong>: Pin fixed atoms and add harmonic <strong>distance</strong>, <strong>angle</strong>, and <strong>dihedral</strong> restraints.</li>
+</ul>
+
+<h3>2. 3D Structure Generation from SMILES (Zero Dependencies)</h3>
+<ul>
+  <li><strong>Built-in 3D Distance-Geometry Embedder</strong>: Generates 3D starting conformations directly from SMILES—including chair six-membered rings, planar aromatic rings, and linear <em>sp</em> centers (2D flat layout is also available as an option).</li>
+  <li><strong>Stereochemistry Support</strong>: Honors tetrahedral (<code>@</code>, <code>@@</code>, <code>@TH1</code>, <code>@TH2</code>) and <em>E/Z</em> double-bond (<code>/</code>, <code>\</code>) stereo marks.</li>
+  <li><strong>Extended Syntax</strong>: Supports aromatic Kekulization, isotopes (e.g., <code>[13CH4]</code>, <code>[2H]O[2H]</code>), formal charges, bracketed silicon, and wildcard placeholders (<code>*</code>).</li>
+</ul>
+
+<h3>3. Chemical File Import &amp; Export</h3>
+<ul>
+  <li><strong>MDL MOL (V2000 &amp; V3000)</strong>: Imports and exports atom coordinates, bond orders, formal charges (<code>M  CHG</code>), isotopes (<code>M  ISO</code> / <code>MASS=</code>), and converts aromatic bonds (order 4) to Kekule single/double patterns.</li>
+  <li><strong>SDF (Multi-Record)</strong>: Batch-import multiple records arranged neatly in a row while preserving SD data items, and export multiple selected molecules to a single SD file.</li>
+  <li><strong>XYZ &amp; PDB</strong>: Imports and exports coordinates and PDB <code>HETATM</code>/<code>CONECT</code> connectivity, with optional distance-based single-bond perception for XYZ and CONECT-less PDB files.</li>
+  <li><strong>UFF JSON Report</strong>: Export atom types, per-term energies, constraints, and minimization logs as JSON.</li>
+</ul>
+
+<h3>4. Intuitive Atom &amp; Bond Editing in Blender</h3>
+<ul>
+  <li><strong>Build from Scratch</strong>: Start an empty molecule at the 3D cursor, add atoms, or add bonded atoms directly in one click.</li>
+  <li><strong>Smart Valence Handling</strong>: Automatically replaces spare explicit hydrogens when adding a single, double, or triple bond to a saturated atom, while guarding against invalid over-valence edits.</li>
+  <li><strong>Full Edit Controls</strong>: Change elements, set formal charges, toggle/delete bonds, batch-delete selected atoms (with automatic constraint re-indexing), and make implicit hydrogens explicit in one click.</li>
+</ul>
+
+<h3>5. Customizable Display &amp; Materials</h3>
+<ul>
+  <li><strong>Live CPK Palette &amp; Materials</strong>: Adjust per-element colors, Roughness, and Metallic sliders with instant viewport updates across Blend Mol objects.</li>
+  <li><strong>Mesh Controls</strong>: Customize atom scale, bond radius, sphere/cylinder tessellation, and add non-destructive Subdivision Surface modifiers.</li>
+  <li><strong>Recovery Tools</strong>: Save/restore coordinate snapshots, compare Before/After UFF minimization states, and use emergency <em>Jitter</em> to escape degenerate collinear geometries.</li>
+</ul>
+
+<hr>
+
+<h2>Supported Elements &amp; Current Scope</h2>
+<p>To keep expectations clear, here is what Blend Mol <strong>v0.1.92</strong> currently supports and what is still on the roadmap:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Area</th>
+      <th>Current Support (v0.1.92)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Blender Version</strong></td>
+      <td>Blender 5.2 or newer (Extension format)</td>
+    </tr>
+    <tr>
+      <td><strong>Elements (18)</strong></td>
+      <td><code>H, C, N, O, F, P, S, Cl, Br, I, B, Si, Ge, Sn, As, Sb, Se, Te</code></td>
+    </tr>
+    <tr>
+      <td><strong>Force Field</strong></td>
+      <td>Partial UFF (bond, angle, torsion, inversion, vdW). <em>No electrostatic/Coulomb terms yet.</em></td>
+    </tr>
+    <tr>
+      <td><strong>SMILES Stereo</strong></td>
+      <td>Tetrahedral (<code>@</code>, <code>@@</code>, <code>@TH1</code>, <code>@TH2</code>) and double-bond (<code>/</code>, <code>\</code>). <em>Allene/square-planar/octahedral stereo tags are not supported yet.</em></td>
+    </tr>
+    <tr>
+      <td><strong>Live UFF Undo</strong></td>
+      <td>Canceling with <code>Esc</code>/right-click restores the session's starting coordinates (not per-drag history).</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>Platform Compatibility &amp; Included Files</h2>
+<ul>
+  <li><strong>Windows (x64)</strong>: Tested with Blender 5.2+ &amp; includes native Rust DLL (<code>blend_mol_uff.dll</code>).</li>
+  <li><strong>Linux (x64)</strong>: Headless-verified in CI with Blender 5.2 &amp; includes native Rust shared library (<code>libblend_mol_uff.so</code>).</li>
+  <li><strong>macOS (Apple Silicon &amp; Intel Universal)</strong>: Includes compiled Universal library (<code>libblend_mol_uff.dylib</code>) and pure-Python fallback. <em>Note: macOS native library is currently unsigned and awaiting real-world user feedback; if blocked by macOS security, Blend Mol automatically falls back to the built-in Python solver.</em></li>
+</ul>
+<p>You can install the <strong>All-in-One ZIP</strong> (works on all supported OSes) or choose your OS-specific package via <em>Edit → Preferences → Get Extensions → Install from Disk</em>.</p>
+
+<hr>
+
+<h2>Roadmap</h2>
+<ul>
+  <li>Electrostatic interactions (QEq partial charges + Coulomb term)</li>
+  <li>Transition metal UFF typing &amp; manual type overrides</li>
+  <li>Conformer search &amp; per-drag Live UFF undo</li>
+  <li>Additional display modes (space-filling / VDW, wireframe, ribbon) &amp; CIF / Cube support</li>
+</ul>
+
+<p><strong>License:</strong> GPL-3.0-or-later</p>

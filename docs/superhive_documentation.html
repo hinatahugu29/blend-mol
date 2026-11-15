@@ -1,0 +1,135 @@
+<!--
+  Superhive (Blender Market) Documentation Tab HTML for Blend Mol (v0.1.92)
+  Note: Uses standard semantic HTML tags only (no <style> or <script>) for clean rendering
+  and compatibility across Superhive themes.
+-->
+
+<h2>1. Installation (Blender 5.2+)</h2>
+<ol>
+  <li>Download the <strong>All-in-One ZIP</strong> (<code>blend_mol-0.1.92.zip</code>) or the ZIP specific to your OS.</li>
+  <li>Open Blender <strong>5.2 or newer</strong> and go to <em>Edit → Preferences → Get Extensions</em>.</li>
+  <li>Click the top-right drop-down arrow and select <strong>Install from Disk...</strong>, then choose the downloaded ZIP file.</li>
+  <li>Make sure the <strong>Blend Mol</strong> add-on is enabled.</li>
+  <li>In the 3D Viewport, press <code>N</code> to open the sidebar and select the <strong>Blend Mol</strong> tab.</li>
+</ol>
+
+<hr>
+
+<h2>2. Quick Start Workflow</h2>
+<ol>
+  <li><strong>Create or Import a Molecule</strong>:
+    <ul>
+      <li>Open <strong>Import</strong> to load a file (<code>MOL</code>, <code>XYZ</code>, <code>PDB</code>, <code>SDF</code>) or generate a 3D structure via <strong>Create from SMILES</strong>.</li>
+      <li>Or click <strong>New Blend Mol Molecule</strong> under <strong>Atoms &amp; Molecules</strong> to start from a single atom at the 3D cursor.</li>
+    </ul>
+  </li>
+  <li><strong>Build &amp; Edit</strong>:
+    <ul>
+      <li>Pick an <strong>Element</strong>, then use <strong>Add Atom at Cursor</strong> or select an existing atom and click <strong>Add Bonded Atom</strong> (with the adjacent <strong>Bond Order</strong> set to 1, 2, or 3).</li>
+      <li>To connect two existing atoms, select both and use <strong>Create / Change Bond</strong> in the <strong>Bonds</strong> panel.</li>
+    </ul>
+  </li>
+  <li><strong>Prepare Hydrogens for Auto Live UFF</strong>:
+    <ul>
+      <li>If the <strong>Make Hydrogens Explicit</strong> button is highlighted in red, click it before dragging atoms with automatic Live UFF. When complete, it turns into a checkmark (<em>Hydrogens Explicit</em>).</li>
+    </ul>
+  </li>
+  <li><strong>Interactive UFF Relaxation</strong>:
+    <ul>
+      <li>With <strong>Auto UFF When Moving Atoms</strong> enabled (on by default), select an explicit atom and move it (<code>G</code>). Surrounding atoms relax automatically and stop once settled.</li>
+      <li>For continuous manual sessions, click <strong>Start Live UFF</strong>. To minimize the entire molecule in one pass, click <strong>Minimize UFF</strong>.</li>
+    </ul>
+  </li>
+  <li><strong>Style &amp; Export</strong>:
+    <ul>
+      <li>Adjust colors, materials, and mesh settings under <strong>Display</strong>, then save your work under <strong>Export</strong>.</li>
+    </ul>
+  </li>
+</ol>
+
+<hr>
+
+<h2>3. Panel Reference</h2>
+
+<h3>Import</h3>
+<ul>
+  <li><strong>MOL</strong>: Imports MDL MOL files in both <strong>V2000</strong> and <strong>V3000</strong> formats. Aromatic bonds (order 4) are automatically converted to alternating single/double (Kekule) bonds.</li>
+  <li><strong>XYZ</strong>: Imports Cartesian coordinates. With <strong>Perceive Bonds</strong> enabled (default), single bonds are added between atoms within their covalent radii + 0.45 Å.</li>
+  <li><strong>PDB</strong>: Imports <code>ATOM</code> / <code>HETATM</code> coordinates and <code>CONECT</code> single bonds. If a file has no <code>CONECT</code> records, <strong>Perceive Bonds Without CONECT</strong> (default on) infers single bonds from distances.</li>
+  <li><strong>SDF</strong>: Imports multi-record SD files (V2000/V3000), creating one molecule per record up to <strong>Max Records</strong> (default 100). Optional <strong>Skip Invalid Records</strong> and <strong>Arrange in a Row</strong> prevent overlap while keeping stored atom coordinates intact. SD data items are preserved for re-export.</li>
+  <li><strong>Create from SMILES</strong>: Generates a 3D starting conformation using built-in distance geometry (or a flat 2D layout if <strong>3D Starting Geometry</strong> is unchecked). Supports <code>@</code>/<code>@@</code>/<code>@TH1</code>/<code>@TH2</code>, <code>/</code>/<code>\</code>, aromatic rings, isotopes (e.g., <code>[13CH4]</code>, <code>[2H]O[2H]</code>), bracketed silicon (<code>[SiH4]</code>), and wildcard placeholders (<code>*</code>).</li>
+</ul>
+
+<h3>Atoms &amp; Molecules</h3>
+<ul>
+  <li><strong>New Blend Mol Molecule</strong>: Creates a new molecule with one atom at the 3D cursor.</li>
+  <li><strong>Make Hydrogens Explicit</strong>: Converts displayed implicit hydrogens into editable explicit atom/bond objects (required before automatic Live UFF on atom move).</li>
+  <li><strong>Add Atom at Cursor / Add Bonded Atom</strong>: Adds an atom of the chosen <strong>Element</strong>. When adding a bonded atom to an already-saturated atom, Blend Mol automatically replaces as many spare explicit hydrogens as needed for the requested bond order.</li>
+  <li><strong>Change Element / Delete Atom</strong>: Changes the active atom's element (dropping any old isotope label) or batch-deletes all selected explicit atoms and remaps constraints automatically.</li>
+  <li><strong>Atom Details &amp; Coordinates</strong> <em>(collapsed by default)</em>: Set <strong>Formal Charge</strong> (-3 to +3), inspect atom index/isotope info, or run <strong>Sync Edited Atom Positions</strong> after manually transforming atom objects.</li>
+</ul>
+
+<h3>Bonds</h3>
+<ul>
+  <li><strong>Bond Order / Create / Change Bond / Delete Bond</strong>: Create or update single/double/triple bonds between two selected explicit atoms, or delete the active bond. Edits that would introduce or worsen an invalid valence excess are prevented with a warning.</li>
+  <li><strong>Valence warnings</strong>: Displays any over-valence or unruled atoms detected in the stored structure.</li>
+</ul>
+
+<h3>UFF (Force Field &amp; Optimization)</h3>
+<ul>
+  <li><strong>Auto UFF When Moving Atoms</strong>: Automatically triggers Live UFF when you move an explicit atom and stops after settling.</li>
+  <li><strong>Start Live UFF / Stop Live UFF</strong>: Runs interactive background relaxation while holding the selected atom fixed. Press <code>Esc</code> or right-click to cancel and restore the session's starting coordinates. Manual start also makes any remaining implicit hydrogens explicit.</li>
+  <li><strong>Minimize UFF</strong>: Runs full partial UFF minimization on the molecule (explicitating any remaining hydrogens automatically).</li>
+</ul>
+
+<h4>UFF Settings &amp; Diagnostics <em>(collapsed by default)</em></h4>
+<ul>
+  <li><strong>Atom Typing &amp; Energy Breakdown</strong>: Inspect assigned UFF types and toggle <strong>Show Energy Breakdown</strong> to view Bond Stretch, Angle Bend, Torsion, Out-of-Plane, and van der Waals energies (kcal/mol).</li>
+  <li><strong>Solver Settings</strong>: Configure <strong>UFF Iterations</strong>, <strong>UFF Max Atom Step</strong>, <strong>Gradient Tolerance</strong>, <strong>Energy Tolerance</strong>, and <strong>UFF Optimizer</strong> (<code>L-BFGS</code> default, <code>FIRE2</code>, or <code>Steepest Descent</code>).</li>
+  <li><strong>UFF Compute Backend</strong>: Switch between <code>Auto</code> (uses native Rust library when available, otherwise Python), <code>Python</code>, or <code>Rust</code>.</li>
+  <li><strong>Interactive Diagnostics &amp; Benchmark</strong>: Run a single manual relaxation step (<strong>Relax Around Selected Atom</strong>), tune Live UFF chunk budget/interval/settle updates, run <strong>Benchmark 1 UFF Step</strong>, or toggle <strong>Show Before / Show After</strong> coordinates from the last minimization.</li>
+</ul>
+
+<h4>UFF Constraints <em>(collapsed by default)</em></h4>
+<ul>
+  <li><strong>Fixed Atoms</strong>: Select an explicit atom and click <strong>Toggle Fixed Selected Atom</strong> to pin it during UFF and display relaxation.</li>
+  <li><strong>Distance Constraint</strong>: Select 2 explicit atoms, enter <strong>Target Distance (Å)</strong> or click <strong>Use Current</strong>, then <strong>Set Target</strong>.</li>
+  <li><strong>Angle Constraint</strong>: Select 3 explicit atoms with the <strong>center atom active</strong>, then set a degree target or capture the current angle.</li>
+  <li><strong>Dihedral Constraint</strong>: Select 4 explicit atoms forming one unambiguous bonded path, then set a signed degree target (-180° to 180°) or capture the current dihedral.</li>
+</ul>
+
+<h3>Display</h3>
+<ul>
+  <li><strong>Element Colors</strong>: Live CPK color pickers for every element present in the scene, plus <strong>Reset to CPK Colors</strong>.</li>
+  <li><strong>Geometry</strong>: Adjust <strong>Atom Scale</strong>, <strong>Bond Radius</strong>, and <strong>Show Implicit Hydrogens</strong>, then click <strong>Rebuild Selected Molecule</strong> to apply.</li>
+  <li><strong>Material</strong>: <strong>Roughness</strong> and <strong>Metallic</strong> sliders update the shared atom/bond materials immediately.</li>
+  <li><strong>Mesh Detail</strong> <em>(collapsed by default)</em>: Configure sphere/cylinder segments and apply non-destructive <strong>Add Subdivision Surface</strong> modifiers.</li>
+  <li><strong>Coordinates &amp; Recovery</strong> <em>(collapsed by default)</em>: Run non-UFF <strong>Relax Display Geometry</strong>, save/restore a <strong>Position Snapshot</strong>, or apply <strong>Jitter All Atom Positions</strong>.</li>
+</ul>
+
+<h3>Export</h3>
+<ul>
+  <li><strong>MOL</strong>: Exports the active molecule as V2000, V3000, or Auto (switches to V3000 above 999 atoms/bonds).</li>
+  <li><strong>XYZ / PDB</strong>: Exports Cartesian coordinates (XYZ) or <code>HETATM</code>/<code>CONECT</code> records (PDB; note that PDB <code>CONECT</code> has no bond-order field).</li>
+  <li><strong>SDF</strong>: Exports all selected molecules (or only the active one) into one SD file, preserving SD data items.</li>
+  <li><strong>Export Partial UFF Report</strong>: Saves a JSON report with atom types, energy terms, constraints, minimization history, and benchmark results.</li>
+</ul>
+
+<hr>
+
+<h2>4. Troubleshooting &amp; FAQ</h2>
+
+<p><strong>Q: Why does Auto Live UFF say "make implicit hydrogens explicit first"?</strong><br>
+A: Making hydrogens explicit rebuilds the atom/bond objects in Blender. Doing that while Blender's move operator (<code>G</code>) is active on an atom would invalidate the dragged object. Click <strong>Make Hydrogens Explicit</strong> (red button in <em>Atoms &amp; Molecules</em>) once, or click <strong>Start Live UFF</strong> manually.</p>
+
+<p><strong>Q: UFF stopped with a "collinear atoms have no stable angle gradient" warning.</strong><br>
+A: If three bonded atoms on a non-linear center start at an exact 180° line (for example from a flat 2D layout or symmetric edit), the angle gradient is singular. Click <strong>Jitter</strong> (shown right below the warning, or under <em>Display → Coordinates &amp; Recovery</em>) to nudge atoms slightly off the line, then run UFF again.</p>
+
+<p><strong>Q: How do I undo a Live UFF drag?</strong><br>
+A: Pressing <code>Esc</code> or right-clicking while Live UFF is active cancels the session and restores all atoms to the coordinates from when the Live UFF session started. Undo/Redo (<code>Ctrl+Z</code>) also safely stops any background worker before changing history.</p>
+
+<p><strong>Q: What if the native Rust library fails to load on my OS (especially macOS)?</strong><br>
+A: When <strong>UFF Compute Backend</strong> is set to <code>Auto</code> (default), Blend Mol automatically falls back to the built-in pure-Python UFF solver. You can check the active backend under <em>UFF Settings &amp; Diagnostics</em>. (macOS builds are currently unsigned and awaiting user feedback.)</p>
+
+<p><strong>Q: Which elements and force-field terms are supported?</strong><br>
+A: Blend Mol v0.1.92 supports 18 main-group elements (<code>H, C, N, O, F, P, S, Cl, Br, I, B, Si, Ge, Sn, As, Sb, Se, Te</code>) and five Partial UFF terms (bond stretch, angle bend, torsion, out-of-plane, van der Waals). Electrostatic terms and transition metals are planned for future releases.</p>
