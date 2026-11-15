@@ -1,9 +1,10 @@
-"""Optional Windows-native UFF kernels with an explicit Python fallback."""
+"""Optional native UFF kernels (Windows/Linux/macOS) with an explicit Python fallback."""
 
 from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from pathlib import Path
 
 
@@ -28,14 +29,23 @@ def set_backend_preference(value: str) -> None:
     _PREFERENCE_OVERRIDE = normalized
 
 
+def _library_filename() -> str:
+    if sys.platform == "win32":
+        return "blend_mol_uff.dll"
+    if sys.platform == "darwin":
+        return "libblend_mol_uff.dylib"
+    return "libblend_mol_uff.so"
+
+
 def _library_path() -> Path:
     module_directory = Path(__file__).parent
-    packaged = module_directory / "native" / "blend_mol_uff.dll"
+    filename = _library_filename()
+    packaged = module_directory / "native" / filename
     if packaged.is_file():
         return packaged
     # Compatibility with 0.1.49/0.1.50 archives, which accidentally flattened
     # the native directory while creating the ZIP.
-    return module_directory / "blend_mol_uff.dll"
+    return module_directory / filename
 
 
 def _load_library():

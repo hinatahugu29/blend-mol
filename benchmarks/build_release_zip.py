@@ -44,7 +44,13 @@ FILES = (
     "scene_data.py",
     "uff.py",
     "README.md",
+    "LICENSE",
+)
+
+NATIVE_LIBRARIES = (
     "native/blend_mol_uff.dll",
+    "native/libblend_mol_uff.so",
+    "native/libblend_mol_uff.dylib",
 )
 
 
@@ -56,7 +62,7 @@ def _read_version() -> str:
     return match.group(1)
 
 
-def build(destination: Path | None = None) -> Path:
+def build(destination: Path | None = None, require_all_native: bool = False) -> Path:
     version = _read_version()
     if destination is None:
         destination = ROOT / "dist" / f"blend_mol-{version}.zip"
@@ -67,11 +73,17 @@ def build(destination: Path | None = None) -> Path:
         # A module missing from FILES would install fine here but fail to
         # import from the release zip.
         raise RuntimeError(f"Add-on modules missing from FILES: {unlisted}")
+    present_native = [rel for rel in NATIVE_LIBRARIES if (SOURCE / rel).is_file()]
+    if require_all_native and len(present_native) != len(NATIVE_LIBRARIES):
+        missing_native = sorted(set(NATIVE_LIBRARIES) - set(present_native))
+        raise RuntimeError(f"Missing required native libraries: {missing_native}")
+    if not present_native:
+        raise RuntimeError("No native UFF library found under blend_mol/native/")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         destination.unlink()
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
-        for relative in FILES:
+        for relative in (*FILES, *present_native):
             source_path = SOURCE / relative
             if not source_path.is_file():
                 raise RuntimeError(f"Missing required release file: {source_path}")
@@ -79,17 +91,23 @@ def build(destination: Path | None = None) -> Path:
     return destination
 
 
-def verify(path: Path) -> None:
+def verify(path: Path, require_all_native: bool = False) -> None:
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
     missing = set(FILES) - names
     if missing:
         raise RuntimeError(f"Built archive is missing: {sorted(missing)}")
-    if "native/blend_mol_uff.dll" not in names:
-        raise RuntimeError("native/ subfolder was flattened in the built archive")
+    present_native = set(NATIVE_LIBRARIES) & names
+    if not present_native:
+        raise RuntimeError("No native/ library found in the built archive (or subfolder was flattened)")
+    if require_all_native and present_native != set(NATIVE_LIBRARIES):
+        raise RuntimeError(f"Built archive is missing native libraries: {sorted(set(NATIVE_LIBRARIES) - present_native)}")
 
 
 if __name__ == "__main__":
-    output = build(Path(sys.argv[1]) if len(sys.argv) > 1 else None)
-    verify(output)
+    args = sys.argv[1:]
+    require_all = "--require-all-native" in args
+    positional = [arg for arg in args if arg != "--require-all-native"]
+    output = build(Path(positional[0]) if positional else None, require_all_native=require_all)
+    verify(output, require_all_native=require_all)
     print(f"Built {output} ({output.stat().st_size} bytes)")

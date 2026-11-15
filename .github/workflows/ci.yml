@@ -5,37 +5,153 @@ on:
   pull_request:
 
 jobs:
-  unit-tests:
-    name: Dependency-free unit tests
-    # windows-latest, not ubuntu-latest: three tests force the native Rust
-    # backend to check Python/Rust parity, and blend_mol/native/blend_mol_uff.dll
-    # is a Windows PE DLL (this project's native path is Windows-only; see
-    # RUST_BACKEND.md). On Linux it fails to load ("invalid ELF header") and
-    # those forced-Rust tests error instead of falling back.
-    runs-on: windows-latest
+  build-native:
+    name: Build native UFF library & unit tests (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x64
+            os: windows-latest
+            artifact: native-windows-x64
+            lib_name: blend_mol_uff.dll
+          - label: linux-x64
+            os: ubuntu-latest
+            artifact: native-linux-x64
+            lib_name: libblend_mol_uff.so
+          - label: macos-universal
+            os: macos-latest
+            artifact: native-macos-universal
+            lib_name: libblend_mol_uff.dylib
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain (Windows / Linux)
+        if: matrix.os != 'macos-latest'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust toolchain (macOS universal)
+        if: matrix.os == 'macos-latest'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build native library (Windows / Linux)
+        if: matrix.os != 'macos-latest'
+        shell: pwsh
+        run: |
+          cargo build --release --manifest-path native/uff_backend/Cargo.toml
+          New-Item -ItemType Directory -Force -Path blend_mol/native | Out-Null
+          Copy-Item "native/uff_backend/target/release/${{ matrix.lib_name }}" "blend_mol/native/${{ matrix.lib_name }}" -Force
+
+      - name: Build native library (macOS universal arm64 + x64)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          cargo build --release --manifest-path native/uff_backend/Cargo.toml --target aarch64-apple-darwin
+          cargo build --release --manifest-path native/uff_backend/Cargo.toml --target x86_64-apple-darwin
+          mkdir -p blend_mol/native
+          lipo -create \
+            native/uff_backend/target/aarch64-apple-darwin/release/libblend_mol_uff.dylib \
+            native/uff_backend/target/x86_64-apple-darwin/release/libblend_mol_uff.dylib \
+            -output blend_mol/native/libblend_mol_uff.dylib
+          lipo -info blend_mol/native/libblend_mol_uff.dylib
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Run unittest discovery
+
+      - name: Run dependency-free unit tests (with native backend)
         run: python -m unittest discover -s tests -v
 
+      - name: Upload native library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: blend_mol/native/${{ matrix.lib_name }}
+
+  package:
+    name: Build All-in-One release ZIP
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: blend_mol/native
+          merge-multiple: true
+
+      - name: Verify native binaries present
+        run: ls -lh blend_mol/native
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build release ZIP (all platforms)
+        run: python benchmarks/build_release_zip.py --require-all-native
+
+      - name: Upload release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: blend_mol-release-zip
+          path: dist/blend_mol-*.zip
+
   blender-smoke:
-    name: Blender headless smoke suites (Windows, native Rust backend)
-    runs-on: windows-latest
+    name: Blender headless smoke suites (${{ matrix.label }})
+    needs:
+      - build-native
+      - package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x64
+            os: windows-latest
+            archive_ext: zip
+            blender_suffix: windows-x64
+            native_artifact: native-windows-x64
+          - label: linux-x64
+            os: ubuntu-latest
+            archive_ext: tar.xz
+            blender_suffix: linux-x64
+            native_artifact: native-linux-x64
+    runs-on: ${{ matrix.os }}
     env:
       BLENDER_VERSION: "5.2.2"
       BLENDER_SERIES: "5.2"
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download built native library for this OS
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.native_artifact }}
+          path: blend_mol/native
+
+      - name: Download All-in-One release ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: blend_mol-release-zip
+          path: dist
+
+      - name: Install Linux headless runtime libraries for Blender
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libice6
+
       - name: Cache Blender download
         id: cache-blender
         uses: actions/cache@v4
         with:
           path: blender-download
-          key: blender-${{ env.BLENDER_VERSION }}-windows-x64
+          key: blender-${{ env.BLENDER_VERSION }}-${{ matrix.blender_suffix }}
 
       - name: Download Blender
         if: steps.cache-blender.outputs.cache-hit != 'true'
@@ -43,10 +159,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path blender-download | Out-Null
           Invoke-WebRequest `
-            -Uri "https://download.blender.org/release/Blender${env:BLENDER_SERIES}/blender-${env:BLENDER_VERSION}-windows-x64.zip" `
-            -OutFile "blender-download/blender.zip"
+            -Uri "https://download.blender.org/release/Blender${env:BLENDER_SERIES}/blender-${env:BLENDER_VERSION}-${{ matrix.blender_suffix }}.${{ matrix.archive_ext }}" `
+            -OutFile "blender-download/blender.${{ matrix.archive_ext }}"
 
-      - name: Extract Blender
+      - name: Extract Blender (Windows)
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           Expand-Archive -Path "blender-download/blender.zip" -DestinationPath "blender-extracted" -Force
@@ -58,10 +175,20 @@ jobs:
           echo "BLENDER_EXE=$($blenderExe.FullName)" >> $env:GITHUB_ENV
           echo "BLENDER_PYTHON=$($pythonExe.FullName)" >> $env:GITHUB_ENV
 
-      - name: Build release ZIP
-        shell: pwsh
+      - name: Extract Blender (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: |
-          & "$env:BLENDER_PYTHON" benchmarks\build_release_zip.py
+          mkdir -p blender-extracted
+          tar -xf blender-download/blender.tar.xz -C blender-extracted
+          BLENDER_BIN=$(find blender-extracted -type f -name "blender" -executable | head -n 1)
+          PYTHON_BIN=$(find blender-extracted -type f -path "*/python/bin/python3*" -executable | head -n 1)
+          if [ -z "$BLENDER_BIN" ] || [ -z "$PYTHON_BIN" ]; then
+            echo "Could not locate blender/python under blender-extracted" >&2
+            exit 1
+          fi
+          echo "BLENDER_EXE=$BLENDER_BIN" >> "$GITHUB_ENV"
+          echo "BLENDER_PYTHON=$PYTHON_BIN" >> "$GITHUB_ENV"
 
       - name: Run dependency-free unit tests (Blender's own Python)
         shell: pwsh
@@ -71,37 +198,31 @@ jobs:
       - name: Smoke test - background worker
         shell: pwsh
         run: |
-          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_background_worker.py
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks/smoke_blender_background_worker.py
 
       - name: Smoke test - bond valence
         shell: pwsh
         run: |
-          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_bond_valence.py
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks/smoke_blender_bond_valence.py
 
       - name: Smoke test - Live UFF gesture lifecycle
         shell: pwsh
         run: |
-          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_live_uff_gesture.py
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks/smoke_blender_live_uff_gesture.py
 
       - name: Smoke test - CRUD/display operator lifecycle
         shell: pwsh
         run: |
-          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\smoke_blender_crud_lifecycle.py
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks/smoke_blender_crud_lifecycle.py
 
-      - name: Validate packaged native DLL in the release ZIP
+      - name: Validate packaged native library in the release ZIP
         shell: pwsh
         run: |
           $zip = Get-ChildItem -Path dist -Filter "blend_mol-*.zip" | Select-Object -First 1
-          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks\validate_distribution.py -- $zip.FullName
+          & "$env:BLENDER_EXE" --background --factory-startup --python-exit-code 1 --python benchmarks/validate_distribution.py -- $zip.FullName
 
       - name: Validate extension manifest
         shell: pwsh
         run: |
           $zip = Get-ChildItem -Path dist -Filter "blend_mol-*.zip" | Select-Object -First 1
           & "$env:BLENDER_EXE" --background --factory-startup --command extension validate $zip.FullName
-
-      - name: Upload release ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: blend_mol-release-zip
-          path: dist/blend_mol-*.zip

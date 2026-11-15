@@ -1,12 +1,13 @@
 schema_version = "1.0.0"
 
 id = "blend_mol"
-version = "0.1.90"
+version = "0.1.92"
 name = "Blend Mol"
 tagline = "Build, edit, and UFF-optimize molecules"
-maintainer = "Blend Mol contributors"
+maintainer = "hinata_hugu"
 type = "add-on"
 tags = ["Import-Export", "Object"]
 blender_version_min = "5.2.0"
+platforms = ["windows-x64", "linux-x64", "macos-arm64", "macos-x64"]
 license = ["SPDX:GPL-3.0-or-later"]
 

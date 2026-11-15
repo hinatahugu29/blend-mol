@@ -53,6 +53,8 @@ Current capabilities include starting from an empty scene, importing and exporti
 - Version 0.1.89 reorganizes the sidebar around atoms, bonds and UFF, separates Import and Export, and closes advanced settings by default. Hydrogen preparation is highlighted in red when needed. Automatic Live UFF defaults to on for new settings; existing saved settings are preserved.
 
 - Version 0.1.90 places an editable bond-order number beside Add Bonded Atom, sharing the value in Bonds.
+- Version 0.1.91 adds the GPL-3.0-or-later `LICENSE` file to the repository and release package, sets `maintainer` to `hinata_hugu`, and sets `platforms = ["windows-x64"]` in `blender_manifest.toml` (Linux/macOS support is planned separately).
+- Version 0.1.92 adds Linux (`libblend_mol_uff.so`) and macOS universal (`libblend_mol_uff.dylib`) support to `native_backend.py`, `build_release_zip.py`, `validate_distribution.py`, and `.github/workflows/ci.yml`, and updates `blender_manifest.toml` to list `windows-x64`, `linux-x64`, `macos-arm64`, and `macos-x64`.
 
 ## More
 

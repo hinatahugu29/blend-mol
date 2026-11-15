@@ -11,7 +11,18 @@ import platform
 import sys
 import tempfile
 import zipfile
-from _ctypes import FreeLibrary
+if sys.platform == "win32":
+    from _ctypes import FreeLibrary
+else:
+    FreeLibrary = None
+
+
+def _expected_native_member() -> str:
+    if sys.platform == "win32":
+        return "native/blend_mol_uff.dll"
+    if sys.platform == "darwin":
+        return "native/libblend_mol_uff.dylib"
+    return "native/libblend_mol_uff.so"
 
 
 def main():
@@ -22,9 +33,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="blend_mol_release_") as directory:
         destination = Path(directory)
         with zipfile.ZipFile(archive_path) as archive:
-            required = {"blender_manifest.toml", "native/blend_mol_uff.dll", "native_backend.py", "uff.py"}
+            required = {"blender_manifest.toml", _expected_native_member(), "native_backend.py", "uff.py"}
             if not required.issubset(archive.namelist()):
-                raise RuntimeError("Release ZIP is missing required files")
+                raise RuntimeError(f"Release ZIP is missing required files: {sorted(required - set(archive.namelist()))}")
             for name in archive.namelist():
                 if not (destination / name).resolve().is_relative_to(destination.resolve()):
                     raise RuntimeError("Unsafe archive member")
@@ -51,11 +62,12 @@ def main():
         if backend.vdw_energy_gradient(coordinates, pairs) is not None:
             raise RuntimeError("Python selection did not bypass the DLL")
 
-        # Simulate a missing DLL only in this isolated process, without touching
+        # Simulate a missing library only in this isolated process, without touching
         # the packaged or installed library on disk.
-        # All native calls have returned; release the Windows loader reference
-        # before the temporary extraction directory is cleaned up.
-        FreeLibrary(backend._LIBRARY._handle)
+        # On Windows, release the loader reference before the temporary directory
+        # is cleaned up.
+        if FreeLibrary is not None and backend._LIBRARY is not None:
+            FreeLibrary(backend._LIBRARY._handle)
         backend._LIBRARY = None
         backend._LOAD_ERROR = None
         backend._library_path = lambda: destination / "missing.dll"
